@@ -3,12 +3,23 @@ import React, { useEffect, useMemo, useState } from 'react'
 // Simple power-flow diagram (PV → Inverter → House/Grid/Battery) with animated arrows
 export default function EnergyFlow() {
   const [d, setD] = useState(null)
+  const [err, setErr] = useState(null)
   useEffect(() => {
     const base = window.location.origin.replace(':8080', ':8081')
-    const tick = () => fetch(base + '/api/inverter/summary').then(r=>r.json()).then(setD).catch(()=>{})
+    let abort = false
+    const tick = async () => {
+      try {
+        const r = await fetch(base + '/api/inverter/summary', { cache: 'no-store' })
+        if (!r.ok) throw new Error('HTTP ' + r.status)
+        const j = await r.json()
+        if (!abort) { setD(j); setErr(null) }
+      } catch (e) {
+        if (!abort) setErr('Keine Live‑Daten (API erreichbar?)')
+      }
+    }
     tick()
     const t = setInterval(tick, 3000)
-    return () => clearInterval(t)
+    return () => { abort = true; clearInterval(t) }
   }, [])
 
   const flows = useMemo(() => {
@@ -23,15 +34,20 @@ export default function EnergyFlow() {
   }, [d])
 
   const scale = v => Math.min(1, Math.max(0.1, v / 4000)) // scale 0.1..1 for ~0..4kW
-  const fmt = v => new Intl.NumberFormat('de-DE').format(Math.round(v)) + ' W'
 
   return (
     <div>
       <h1>PV‑Anlage – Energiefluss</h1>
       <p style={{color:'#666', marginTop:-6}}>Live‑Werte alle 3s aktualisiert</p>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:20, alignItems:'start'}}>
+      {err && (
+        <div style={{background:'#fff3cd', border:'1px solid #ffeeba', color:'#856404', padding:10, borderRadius:6, margin:'8px 0'}}>
+          {err}
+        </div>
+      )}
+      <div style={{display:'grid',gridTemplateColumns:'1fr',gap:20, alignItems:'start'}}>
         <Diagram flows={flows} scaleFn={scale} />
         <Stats flows={flows} />
+        <Legend />
       </div>
     </div>
   )
@@ -111,6 +127,26 @@ function Stats({ flows }){
           </li>
         ))}
       </ul>
+    </div>
+  )
+}
+
+function Legend(){
+  const item = (c, t) => (
+    <div style={{display:'flex', alignItems:'center', gap:8}}>
+      <span style={{display:'inline-block', width:18, height:6, background:c, borderRadius:3}} />
+      <span style={{color:'#555', fontSize:13}}>{t}</span>
+    </div>
+  )
+  return (
+    <div style={{border:'1px solid #eee', borderRadius:8, padding:12}}>
+      <h3 style={{marginTop:0}}>Legende</h3>
+      <div style={{display:'grid', gap:8}}>
+        {item('#f59e0b', 'PV‑Erzeugung')}
+        {item('#10b981', 'Versorgung Haus')}
+        {item('#3b82f6', 'Netz‑Import')}
+        {item('#6366f1', 'Netz‑Export')}
+      </div>
     </div>
   )
 }
