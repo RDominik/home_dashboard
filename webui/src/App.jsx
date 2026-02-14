@@ -21,6 +21,7 @@ export default function App() {
           <NavLink to="/wallbox" style={linkStyle}>Wallbox</NavLink>
           <NavLink to="/inverter" style={linkStyle}>Wechselrichter</NavLink>
           <NavLink to="/energy" style={linkStyle}>PV Energiefluss</NavLink>
+          <NavLink to="/energy-animated" style={linkStyle}>Energiefluss (animiert)</NavLink>
           <NavLink to="/heating" style={linkStyle}>ETA Heizung</NavLink>
           <NavLink to="/grafana" style={linkStyle}>Grafana</NavLink>
         </nav>
