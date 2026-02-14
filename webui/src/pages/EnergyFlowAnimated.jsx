@@ -1,9 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react'
+import Options from './EnergyFlowAnimated.options.jsx'
 
 // Animated Energy Flow inspired by Home Assistant cards
 export default function EnergyFlowAnimated(){
   const [d, setD] = useState(null)
   const [err, setErr] = useState(null)
+  const [opts, setOpts] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('efa.opts')||'') || {} } catch { return {} }
+  })
+  const refreshMs = Number(opts.refreshMs ?? 3000)
+  const maxPower = Number(opts.maxPower ?? 5000)
+  const speed = Number(opts.speed ?? 1.1) // seconds per cycle
+  const showLegend = opts.showLegend !== false
+
+  useEffect(() => { localStorage.setItem('efa.opts', JSON.stringify(opts)) }, [opts])
 
   useEffect(() => {
     const base = window.location.origin.replace(':8080', ':8081')
@@ -19,9 +29,9 @@ export default function EnergyFlowAnimated(){
       }
     }
     tick()
-    const t = setInterval(tick, 3000)
+    const t = setInterval(tick, Math.max(1000, refreshMs))
     return () => { abort = true; clearInterval(t) }
-  }, [])
+  }, [refreshMs])
 
   const flows = useMemo(() => {
     const ppv = Number(d?.ppv ?? 0)
@@ -32,23 +42,24 @@ export default function EnergyFlowAnimated(){
     return { ppv, house, grid, batterySoc }
   }, [d])
 
-  const cap = v => Math.min(1, Math.max(0.12, v/5000))
+  const cap = v => Math.min(1, Math.max(0.12, v/Math.max(500, maxPower)))
   const fmtW = v => new Intl.NumberFormat('de-DE').format(Math.round(v || 0)) + ' W'
 
   return (
     <div>
       <h1>Energiefluss (animiert)</h1>
-      <p style={{color:'#666', marginTop:-6}}>Pfeile laufen in Flussrichtung. Live-Update alle 3s.</p>
+      <p style={{color:'#666', marginTop:-6}}>Pfeile laufen in Flussrichtung. Live‑Update alle {Math.round(refreshMs/1000)}s.</p>
+      <Options opts={opts} setOpts={setOpts} />
       {err && <div style={{background:'#fff3cd', border:'1px solid #ffeeba', color:'#856404', padding:10, borderRadius:6, margin:'8px 0'}}>{err}</div>}
       <div style={{display:'grid', gridTemplateColumns:'1fr 320px', gap:16}}>
-        <Diagram flows={flows} cap={cap} />
-        <Panel flows={flows} />
+        <Diagram flows={flows} cap={cap} speed={speed} />
+        <Panel flows={flows} showLegend={showLegend} />
       </div>
     </div>
   )
 }
 
-function Diagram({ flows, cap }){
+function Diagram({ flows, cap, speed }){
   const arrow = (x1,y1,x2,y2,v,color, dir='forward') => {
     const w = 8 + 18*cap(Math.abs(v))
     const cls = dir === 'reverse' ? 'flow flow-rev' : 'flow'
@@ -75,7 +86,7 @@ function Diagram({ flows, cap }){
         .box { fill: #fff; stroke: #e5e7eb; }
         .label { font: 12px 'Poppins', system-ui, sans-serif; fill: #374151; }
         .value { font: 14px 'Poppins', system-ui, sans-serif; font-weight:600; fill:#111827; }
-        .flow { stroke-dasharray: 12 14; animation: dash 1.1s linear infinite; }
+        .flow { stroke-dasharray: 12 14; animation: dash ${speed}s linear infinite; }
         .flow-rev { animation-direction: reverse; }
         @keyframes dash { to { stroke-dashoffset: -52; } }
       `}</style>
@@ -105,7 +116,7 @@ function Diagram({ flows, cap }){
   )
 }
 
-function Panel({ flows }){
+function Panel({ flows, showLegend=true }){
   const rows = [
     ['PV', fmtW(flows.ppv)],
     ['Haus', fmtW(flows.house)],
@@ -124,13 +135,17 @@ function Panel({ flows }){
           </li>
         ))}
       </ul>
-      <h4 style={{marginTop:16, color:'#374151'}}>Legende</h4>
-      <div style={{display:'grid', gap:6, fontSize:13, color:'#4b5563'}}>
-        <div>{dot('#f59e0b')} PV → Wechselrichter</div>
-        <div>{dot('#10b981')} Wechselrichter → Haus</div>
-        <div>{dot('#3b82f6')} Netz → Wechselrichter (Import)</div>
-        <div>{dot('#6366f1')} Wechselrichter → Netz (Export)</div>
-      </div>
+      {showLegend && (
+        <>
+          <h4 style={{marginTop:16, color:'#374151'}}>Legende</h4>
+          <div style={{display:'grid', gap:6, fontSize:13, color:'#4b5563'}}>
+            <div>{dot('#f59e0b')} PV → Wechselrichter</div>
+            <div>{dot('#10b981')} Wechselrichter → Haus</div>
+            <div>{dot('#3b82f6')} Netz → Wechselrichter (Import)</div>
+            <div>{dot('#6366f1')} Wechselrichter → Netz (Export)</div>
+          </div>
+        </>
+      )}
     </div>
   )
 }
