@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import Options from './EnergyFlowAnimated.options.jsx'
 
+const fmtW = v => new Intl.NumberFormat('de-DE').format(Math.round(v || 0)) + ' W'
+
 // Animated Energy Flow inspired by Home Assistant cards
 export default function EnergyFlowAnimated(){
   const [d, setD] = useState(null)
@@ -43,7 +45,6 @@ export default function EnergyFlowAnimated(){
   }, [d])
 
   const cap = v => Math.min(1, Math.max(0.12, v/Math.max(500, maxPower)))
-  const fmtW = v => new Intl.NumberFormat('de-DE').format(Math.round(v || 0)) + ' W'
 
   return (
     <div>
