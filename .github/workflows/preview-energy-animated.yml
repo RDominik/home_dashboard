@@ -42,7 +42,8 @@ jobs:
             fs.mkdirSync(outDir, { recursive: true });
             const frames = 40; // ~10s @ 4 fps
             for (let i=0;i<frames;i++){
-              const p = path.join(outDir, );
+              const fname = 'f_' + String(i).padStart(3,'0') + '.png';
+              const p = path.join(outDir, fname);
               await page.screenshot({ path: p });
               await page.waitForTimeout(250);
             }
