@@ -13,9 +13,9 @@ const linkStyle = ({ isActive }) => ({
 
 export default function App() {
   return (
-    <div style={{ display: 'flex', height: '100vh', fontFamily: 'system-ui, sans-serif' }}>
-      <aside style={{ width: 260, borderRight: '1px solid #eee', padding: 16 }}>
-        <h2 style={{ marginTop: 0 }}>ETA</h2>
+    <div style={{ display: 'flex', height: '100vh' }}>
+      <aside style={{ width: 260, borderRight: '1px solid #e5e7eb', padding: 16, background:'#f9fafb' }}>
+        <h2 style={{ marginTop: 0, letterSpacing: '0.2px' }}>ETA</h2>
         <nav style={{ display: 'grid', gap: 6 }}>
           <NavLink to="/" style={linkStyle} end>Übersicht</NavLink>
           <NavLink to="/wallbox" style={linkStyle}>Wallbox</NavLink>
