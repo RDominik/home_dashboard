@@ -22,6 +22,7 @@ services:
       - MQTT_TOPIC_PPV=eta/ppv
       - MQTT_TOPIC_HOUSE=eta/house
       - MQTT_TOPIC_SOC=eta/battery/soc
+      - PYTHONPATH=/app/api
     ports:
       - "8081:8081"
     restart: unless-stopped
