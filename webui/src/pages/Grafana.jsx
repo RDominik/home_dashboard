@@ -12,13 +12,13 @@ export default function Grafana() {
   }, [url])
 
   return (
-    <div style={{height:'100%', display:'flex', flexDirection:'column'}}>
-      <h1>Grafana Dashboard</h1>
-      <div style={{display:'flex', gap:8, alignItems:'center', marginBottom:8}}>
-        <label htmlFor="gurl" style={{color:'#555'}}>URL:</label>
+    <div style={{height:'100%', display:'flex', flexDirection:'column', background: '#ffffff' }}>
+      <h1>Übersicht Energieverbrauch</h1>
+      {/* <div style={{display:'flex', gap:8, alignItems:'center', marginBottom:8}}>
+        <label htmlFor="gurl" style={{color:'#974141'}}>URL:</label>
         <input id="gurl" value={url} onChange={e=>setUrl(e.target.value)} style={{flex:1, padding:'8px 10px', border:'1px solid #ddd', borderRadius:6}} />
         <button onClick={()=>setUrl(url)} style={{padding:'8px 12px'}}>Laden</button>
-      </div>
+      </div> */}
       {!safeUrl && <div style={{background:'#fff3cd', border:'1px solid #ffeeba', color:'#856404', padding:10, borderRadius:6, margin:'8px 0'}}>Ungültige URL</div>}
       <div style={{flex:1, minHeight:400, border:'1px solid #eee', borderRadius:8, overflow:'hidden'}}>
         {safeUrl && (
