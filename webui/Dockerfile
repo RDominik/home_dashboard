@@ -10,5 +10,5 @@ RUN cd webui && npm run build
 FROM nginx:1.25-alpine
 COPY --from=build /app/webui/dist /usr/share/nginx/html
 COPY webui/nginx.conf /etc/nginx/conf.d/default.conf
-EXPOSE 8080
+EXPOSE 8082
 CMD ["nginx","-g","daemon off;"]

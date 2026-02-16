@@ -184,7 +184,7 @@ const EnergieFlussVisualisierung = () => {
   const [error, setError] = useState(null);
 
   // API-Endpoint - Passe diese URL an deine API an
-  const API_URL = 'http://localhost:8081/api/inverter/summary'; // <-- Hier deine API-URL eintragen
+  const API_URL = 'http://localhost:8082/api/inverter/summary'; // <-- Hier deine API-URL eintragen
 
   // Daten von der API laden
   useEffect(() => {

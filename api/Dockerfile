@@ -3,5 +3,5 @@ WORKDIR /app
 COPY api/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY api /app/api
-EXPOSE 8081
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8081"]
+EXPOSE 8083
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8083"]
