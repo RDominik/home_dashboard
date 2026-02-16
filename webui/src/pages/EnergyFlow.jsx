@@ -205,7 +205,7 @@ const EnergieFlussVisualisierung = () => {
           batterieStand: data.battery_soc || 0,
           batterieLaden: Math.max(0, -(parseFloat(data.pbattery) || 0)),
           batterieEntladen: Math.max(0, parseFloat(data.pbattery) || 0),
-          autoLaden: parseFloat(data.car_power) || 5000,
+          autoLaden: parseFloat(data.car_power) || 0,
           netzEinspeisung: Math.max(0, (data.ppv || 0) - (data.house_consumption || 0)),
           netzBezug: Math.max(0, (data.house_consumption || 0) - (data.ppv || 0))
         });
