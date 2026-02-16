@@ -27,7 +27,7 @@ services:
       - "8083:8083"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8083/docs >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8083/docs')\" 2>/dev/null || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 5
