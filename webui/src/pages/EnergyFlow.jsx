@@ -231,11 +231,10 @@ const EnergieFlussVisualisierung = () => {
   const FlussLinie = ({ von, nach, aktiv, leistung, farbe = "green" }) => {
     // Start, Kontrollpunkt (für Kurve), Ende
     const linien = {
-      'haus-batterie':   { x1: 280, y1: 300, cx: 200, cy: 260, x2: 140, y2: 300 },
+      'pv-batterie':   { x1: 250, y1: 100, cx: 200, cy: 50, x2: 150, y2: 100 },
       'pv-haus':       { x1: 300, y1: 150, cx: 300, cy: 220, x2: 300, y2: 280 },
-      'haus-auto':       { x1: 300, y1: 350, cx: 300, cy: 400, x2: 300, y2: 450 },
-      'batterie-haus': { x1: 150, y1: 300, cx: 220, cy: 340, x2: 280, y2: 300 },
-      'batterie-auto': { x1: 150, y1: 320, cx: 300, cy: 420, x2: 460, y2: 320 },
+      'haus-auto':     { x1: 250, y1: 300, cx: 200, cy: 260, x2: 150, y2: 300 },
+      'batterie-haus': { x1: 150, y1: 100, cx: 200, cy: 200, x2: 300, y2: 280 },
       'netz-haus':     { x1: 480, y1: 300, cx: 400, cy: 260, x2: 340, y2: 300 },
       'haus-netz':     { x1: 340, y1: 300, cx: 400, cy: 340, x2: 480, y2: 300 }
     };
@@ -373,7 +372,7 @@ const EnergieFlussVisualisierung = () => {
           <g transform="translate(5, 5) scale(0.15)" style={{ color: '#fff' }}>
             <SolarPanelIcon />
           </g>
-          <text x="50" y="120" textAnchor="middle" fill="#334155" fontWeight="600">
+          <text x="50" y="-10" textAnchor="middle" fill="#334155" fontWeight="600">
             PV-Anlage
           </text>
           <text x="50" y="138" textAnchor="middle" fill="#10b981" fontWeight="bold" fontSize="18">
@@ -382,7 +381,7 @@ const EnergieFlussVisualisierung = () => {
         </g>
 
           {/* Batterie */}
-          <g transform="translate(50, 250)">
+          <g transform="translate(50, 50)">
           <circle cx="50" cy="50" r="50" fill="none" stroke="#000" strokeWidth="2" strokeOpacity="0.8">
             <animate attributeName="stroke-opacity" values="0.6;0.8;0.6" dur="2s" repeatCount="indefinite"/>
           </circle>
@@ -414,7 +413,7 @@ const EnergieFlussVisualisierung = () => {
           </g>
 
           {/* Auto */}
-          <g transform="translate(250, 450)">
+          <g transform="translate(50, 250)">
             <circle cx="50" cy="50" r="50" fill="none" stroke="#000" strokeWidth="2" strokeOpacity="0.8">
               <animate attributeName="stroke-opacity" values="0.6;0.8;0.6" dur="2s" repeatCount="indefinite"/>
             </circle>
@@ -451,7 +450,7 @@ const EnergieFlussVisualisierung = () => {
 
           {/* Energiefluss-Linien */}
           <FlussLinie 
-            von="haus" 
+            von="pv" 
             nach="batterie" 
             aktiv={energieFluss.batterieLaden > 0} 
             leistung={energieFluss.batterieLaden}
@@ -467,6 +466,7 @@ const EnergieFlussVisualisierung = () => {
             nach="auto" 
             aktiv={energieFluss.autoLaden > 0} 
             leistung={energieFluss.autoLaden}
+            farbe="red"
           />
           <FlussLinie 
             von="batterie" 
