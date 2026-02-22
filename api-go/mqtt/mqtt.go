@@ -99,6 +99,14 @@ func (mqtt_manager *Manager) Messages() map[string]any {
 	return mqtt_map
 }
 
+// IsConnected reports whether the MQTT client is currently connected.
+func (mqtt_manager *Manager) IsConnected() bool {
+	if mqtt_manager == nil || mqtt_manager.client == nil {
+		return false
+	}
+	return mqtt_manager.client.IsConnected()
+}
+
 // Publish sends a message to a topic.
 func (mqtt_manager *Manager) Publish(topic string, value any) error {
 	if mqtt_manager.client == nil || !mqtt_manager.client.IsConnected() {
