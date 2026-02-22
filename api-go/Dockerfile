@@ -8,7 +8,7 @@ WORKDIR /build
 COPY api-go/go.mod api-go/go.sum* ./
 RUN go mod download
 COPY api-go/ .
-COPY api/mqtt_client/broker_config.json ./broker_config.json
+COPY api-go/mqtt/broker_config.json ./broker_config.json
 RUN go mod tidy && CGO_ENABLED=0 go build -o /app/server .
 
 ## Runtime stage
