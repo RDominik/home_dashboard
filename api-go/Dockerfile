@@ -8,7 +8,7 @@ WORKDIR /build
 COPY api-go/go.mod api-go/go.sum* ./
 RUN go mod download
 COPY api-go/ .
-COPY api-go/mqtt/broker_config.json ./broker_config.json
+COPY api-go/mqtt/broker_config.json ./mqtt/broker_config.json
 RUN go mod tidy && CGO_ENABLED=0 go build -o /app/server .
 
 ## Runtime stage
@@ -20,7 +20,7 @@ RUN apk add --no-cache git docker-cli docker-cli-compose ca-certificates && \
 
 WORKDIR /app
 COPY --from=builder /app/server .
-COPY --from=builder /build/broker_config.json .
+COPY --from=builder /build/mqtt/broker_config.json ./mqtt/broker_config.json
 
 EXPOSE 8083
 CMD ["./server"]
