@@ -9,6 +9,8 @@ docker compose -f docker-compose.webui.yml up --build -d
 # Web UI:   http://localhost:8080
 # API (opt): http://localhost:8081
 ```
+logs der docker container
+docker compose -f docker-compose.webui.yml logs -f api
 
 Nur Web UI bauen/starten (ohne Compose):
 
