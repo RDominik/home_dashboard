@@ -8,7 +8,8 @@ import Inverter from './pages/Inverter.jsx'
 import EnergyFlow from './pages/EnergyFlow.jsx'
 import Heating from './pages/Heating.jsx'
 import Grafana from './pages/Grafana.jsx'
-import EnergyFlowAnimated from './pages/EnergyFlowAnimated.jsx'
+import UpdatePage from './pages/UpdatePage.jsx'
+import GoE from './pages/goE.jsx'
 
 const router = createBrowserRouter([
   {
@@ -21,7 +22,8 @@ const router = createBrowserRouter([
       { path: 'energy', element: <EnergyFlow /> },
       { path: 'heating', element: <Heating /> },
       { path: 'grafana', element: <Grafana /> },
-      { path: 'energy-animated', element: <EnergyFlowAnimated /> },
+      { path: 'goE', element: <GoE /> },
+      { path: 'update', element: <UpdatePage /> }
     ],
   },
 ])
