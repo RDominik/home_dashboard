@@ -203,7 +203,7 @@ const EnergieFlussVisualisierung = () => {
           pvProduktion: data.ppv || 0,
           hausVerbrauch: data.house_consumption || 0,
           batterieStand: data.battery_soc || 0,
-          batterieLaden: Math.max(0, -(parseFloat(data.pbattery) || 0)),
+          batterieLaden: Math.max(0, -(parseFloat(data.pbattery) || -0)),
           batterieEntladen: Math.max(0, parseFloat(data.pbattery) || 0),
           autoLaden: parseFloat(data.car_power) || 0,
           netzEinspeisung: Math.max(0, (data.ppv || 0) - (data.house_consumption || 0) + (data.pbattery || 0)),
@@ -231,10 +231,11 @@ const EnergieFlussVisualisierung = () => {
   const FlussLinie = ({ von, nach, aktiv, leistung, farbe = "green" }) => {
     // Start, Kontrollpunkt (für Kurve), Ende
     const linien = {
-      'pv-batterie':   { x1: 250, y1: 100, cx: 200, cy: 50, x2: 150, y2: 100 },
-      'pv-haus':       { x1: 300, y1: 150, cx: 300, cy: 220, x2: 300, y2: 280 },
-      'haus-auto':     { x1: 250, y1: 300, cx: 200, cy: 260, x2: 150, y2: 300 },
-      'batterie-haus': { x1: 150, y1: 100, cx: 200, cy: 200, x2: 300, y2: 280 },
+      'pv-batterie':   { x1: 275, y1: 100, cx: 200, cy: 50, x2: 150, y2: 100 },
+      'pv-haus':       { x1: 312, y1: 150, cx: 350, cy: 220, x2: 312, y2: 280 },
+      'haus-auto':     { x1: 275, y1: 300, cx: 200, cy: 260, x2: 150, y2: 300 },
+      'batterie-haus': { x1: 312, y1: 150, cx: 250, cy: 220, x2: 312, y2: 280 },
+      'batterie-pv':   { x1: 150, y1: 100, cx: 200, cy: 150, x2: 275, y2: 100 },
       'netz-haus':     { x1: 480, y1: 300, cx: 400, cy: 260, x2: 340, y2: 300 },
       'haus-netz':     { x1: 340, y1: 300, cx: 400, cy: 340, x2: 480, y2: 300 }
     };
@@ -365,7 +366,7 @@ const EnergieFlussVisualisierung = () => {
 
         <svg width="600" height="600" style={{ display: 'block', margin: '0 auto' }}>
         {/* PV-Anlage */}
-        <g transform="translate(250, 50)">
+        <g transform="translate(262, 50)">
           <circle cx="50" cy="50" r="50" fill="none" stroke="#000" strokeWidth="2" strokeOpacity="0.8">
             <animate attributeName="stroke-opacity" values="0.6;0.8;0.6" dur="2s" repeatCount="indefinite"/>
           </circle>
@@ -397,7 +398,7 @@ const EnergieFlussVisualisierung = () => {
           </g>
 
           {/* Haus */}
-          <g transform="translate(250, 250)">
+          <g transform="translate(262, 250)">
           <circle cx="50" cy="50" r="50" fill="none" stroke="#000" strokeWidth="2" strokeOpacity="0.8">
             <animate attributeName="stroke-opacity" values="0.6;0.8;0.6" dur="2s" repeatCount="indefinite"/>
           </circle>
@@ -466,6 +467,13 @@ const EnergieFlussVisualisierung = () => {
             nach="auto" 
             aktiv={energieFluss.autoLaden > 0} 
             leistung={energieFluss.autoLaden}
+            farbe="red"
+          />
+          <FlussLinie 
+            von="batterie" 
+            nach="pv" 
+            aktiv={energieFluss.batterieEntladen > 0} 
+            leistung={energieFluss.batterieEntladen}
             farbe="red"
           />
           <FlussLinie 
