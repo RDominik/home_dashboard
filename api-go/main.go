@@ -52,7 +52,7 @@ func cors(next http.Handler) http.Handler {
 const goeSetPrefix = "go-eCharger/254959"
 
 var goeAllowedKeys = map[string]bool{
-	"amp": true, "frc": true, "psm": true, "dwo": true, "alw": true,
+	"amp": true, "frc": true, "psm": true, "dwo": true, "alw": true, "ato": true,
 }
 
 func wallboxStatus(w http.ResponseWriter, r *http.Request) {
