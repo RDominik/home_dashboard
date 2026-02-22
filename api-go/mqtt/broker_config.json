@@ -1,0 +1,27 @@
+{
+    "broker_ip": "192.168.188.97",
+    "port": 1883,
+    "topics": {
+        "goE": [
+            "go-eCharger/254959/alw",
+            "go-eCharger/254959/amp",
+            "go-eCharger/254959/car",
+            "go-eCharger/254959/cus",
+            "go-eCharger/254959/dwo",
+            "go-eCharger/254959/eto",
+            "go-eCharger/254959/frc",
+            "go-eCharger/254959/wh",
+            "go-eCharger/254959/nrg",
+            "go-eCharger/254959/tma",
+            "go-eCharger/254959/psm",
+            "go-eCharger/254959/modelStatus"
+        ],
+        "goodwe": [
+            "goodwe/9020KETT232W0041/ppv",
+            "goodwe/9020KETT232W0041/house_consumption",
+            "goodwe/9020KETT232W0041/battery_soc",
+            "goodwe/9020KETT232W0041/pbattery",
+            "goodwe/254959/battery/power"
+        ]
+    }    
+}
