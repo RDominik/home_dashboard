@@ -234,6 +234,19 @@ func systemUpdate(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, map[string]any{"ok": allOK, "results": results})
 }
 
+// Debug: MQTT status + received messages
+func mqttStatus(w http.ResponseWriter, r *http.Request) {
+	var msgs map[string]any
+	if mqttManager != nil {
+		msgs = mqttManager.Messages()
+	} else {
+		msgs = make(map[string]any)
+	}
+	// consider connected if we have received any messages
+	connected := len(msgs) > 0
+	jsonResponse(w, map[string]any{"connected": connected, "messages": msgs})
+}
+
 // ---------- Heating (Mock) ----------
 
 func heatingSummary(w http.ResponseWriter, r *http.Request) {
@@ -299,6 +312,9 @@ func main() {
 
 	// System
 	mux.HandleFunc("/api/system/update", systemUpdate)
+
+	// MQTT debug
+	mux.HandleFunc("/api/mqtt/status", mqttStatus)
 
 	// Heating
 	mux.HandleFunc("/api/heating/summary", heatingSummary)
