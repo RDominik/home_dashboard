@@ -1,0 +1,411 @@
+.eta-wrap {
+  min-height: calc(100vh - 40px);
+  display: grid;
+  place-items: center;
+}
+
+.eta-screen {
+  --eta-bg: #1f2228;
+  --eta-panel: #12151b;
+  --eta-panel-2: #181c23;
+  --eta-stroke: #ffd000;
+  --eta-text: #eceff4;
+  --eta-muted: #a7adb7;
+  width: min(100%, 1220px);
+  border: 2px solid var(--eta-stroke);
+  background:
+    linear-gradient(180deg, #2c313a 0%, #1c2027 60%, #171a20 100%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.03) 0 2px, transparent 2px 6px);
+  border-radius: 8px;
+  color: var(--eta-text);
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.eta-top {
+  display: grid;
+  grid-template-columns: 110px 1fr auto;
+  align-items: stretch;
+  border-bottom: 2px solid var(--eta-stroke);
+}
+
+.eta-brand {
+  display: grid;
+  place-items: center;
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  color: #1a1a1a;
+  background: linear-gradient(180deg, #ffe772 0%, #ffcf00 100%);
+}
+
+.eta-tabs {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.eta-tab {
+  border: 0;
+  padding: 10px 14px;
+  background: linear-gradient(180deg, #353b45 0%, #242933 100%);
+  color: #f7f8fa;
+  cursor: pointer;
+  font-size: 1.05rem;
+  font-weight: 600;
+  border-right: 1px solid #454c58;
+}
+
+.eta-tab-active {
+  background: linear-gradient(180deg, #ffe772 0%, #ffcf00 100%);
+  color: #111;
+}
+
+.eta-top-icons {
+  display: flex;
+}
+
+.eta-icon {
+  min-width: 74px;
+  display: grid;
+  place-items: center;
+  border-left: 1px solid #454c58;
+  font-size: 0.94rem;
+  font-weight: 600;
+  color: #d7dce5;
+}
+
+.eta-main {
+  display: grid;
+  grid-template-columns: 1fr 250px;
+  min-height: 520px;
+}
+
+.eta-stage {
+  border-right: 2px solid var(--eta-stroke);
+  padding: 12px;
+}
+
+.eta-status-box {
+  border: 1px solid #232834;
+  background: linear-gradient(180deg, #ffde29, #ffcb00);
+  color: #1a1a1a;
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-size: 2rem;
+  font-weight: 800;
+  margin-bottom: 12px;
+}
+
+.eta-view {
+  border: 1px solid #2a2f3a;
+  border-radius: 12px;
+  background: radial-gradient(circle at 20% 20%, #1f2530 0%, #11141a 65%);
+  min-height: 420px;
+  padding: 16px;
+}
+
+.eta-grid-kessel,
+.eta-grid-puffer,
+.eta-grid-hk,
+.eta-grid-efilter,
+.eta-grid-sys {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 1fr 220px;
+}
+
+.eta-machine-block {
+  display: grid;
+  place-items: center;
+}
+
+.eta-machine-art {
+  width: min(100%, 400px);
+  height: 300px;
+  border-radius: 20px;
+  border: 2px solid #2e3643;
+  box-shadow: inset 0 0 0 2px rgba(255, 208, 0, 0.22);
+}
+
+.eta-kessel-block {
+  align-items: center;
+}
+
+.eta-kessel-canvas {
+  position: relative;
+  width: min(100%, 560px);
+  min-height: 340px;
+}
+
+.eta-kessel-image {
+  display: block;
+  width: min(100%, 320px);
+  margin: 24px auto 0;
+  border-radius: 8px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+}
+
+.eta-kessel-label {
+  position: absolute;
+  background: linear-gradient(180deg, #1f2531, #10141c);
+  color: #f2f6fb;
+  border: 1px solid #40495b;
+  border-left: 3px solid #ffcf00;
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  box-shadow: 0 8px 14px rgba(0, 0, 0, 0.35);
+}
+
+.eta-kessel-line {
+  position: absolute;
+  height: 2px;
+  background: #f1c400;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+
+.eta-kessel-dot {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f1c400;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+
+.eta-kessel-label-top {
+  left: 8px;
+  top: 16px;
+}
+
+.eta-kessel-label-mid {
+  left: 8px;
+  top: 86px;
+}
+
+.eta-kessel-label-bottom {
+  left: 8px;
+  top: 150px;
+}
+
+.eta-kessel-line-top-h {
+  left: 70px;
+  top: 28px;
+  width: 175px;
+}
+
+.eta-kessel-line-top-v {
+  left: 244px;
+  top: 28px;
+  width: 2px;
+  height: 25px;
+}
+
+.eta-kessel-line-bottom {
+  left: 70px;
+  top: 162px;
+  width: 175px;
+}
+
+.eta-kessel-dot-top {
+  left: 241px;
+  top: 49px;
+}
+
+.eta-kessel-dot-bottom {
+  left: 241px;
+  top: 159px;
+}
+
+.eta-boiler {
+  background:
+    linear-gradient(120deg, rgba(255, 208, 0, 0.88) 0 38%, rgba(188, 194, 204, 0.3) 38% 56%, rgba(18, 24, 33, 0.6) 56% 100%),
+    radial-gradient(circle at 70% 55%, #626a75 0 24%, #303641 25% 100%);
+}
+
+.eta-buffer {
+  background:
+    linear-gradient(180deg, #ff3f26 0%, #d32414 50%, #3d5fff 100%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.28), transparent 30%);
+  border-radius: 120px;
+}
+
+.eta-filter {
+  background:
+    linear-gradient(180deg, #2d333d 0%, #14171c 100%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.2) 0 6px, transparent 6px 20px);
+}
+
+.eta-house-outline {
+  width: min(100%, 350px);
+  height: 280px;
+  margin: 12px auto;
+  clip-path: polygon(50% 8%, 87% 29%, 87% 86%, 13% 86%, 13% 29%);
+  border: 2px solid var(--eta-stroke);
+  background: linear-gradient(180deg, #060708, #121519);
+}
+
+.eta-hk-radiator {
+  width: min(100%, 420px);
+  height: 220px;
+  margin: 0 auto;
+  border-radius: 20px;
+  background:
+    repeating-linear-gradient(90deg, rgba(220, 226, 236, 0.27) 0 14px, transparent 14px 22px),
+    linear-gradient(180deg, #3d424d, #171a21);
+  border: 2px solid #313845;
+}
+
+.eta-hk-schedule {
+  position: relative;
+  margin-top: 20px;
+  height: 64px;
+  border: 1px solid #465067;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #313742, #1e222b);
+}
+
+.eta-hk-track {
+  position: absolute;
+  inset: 50% 12px auto;
+  height: 3px;
+  transform: translateY(-50%);
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.eta-hk-window {
+  position: absolute;
+  top: 18px;
+  height: 28px;
+  border-radius: 4px;
+  background: #ffcf00;
+}
+
+.eta-hk-window-a {
+  left: 20%;
+  width: 120px;
+}
+
+.eta-hk-window-b {
+  left: 63%;
+  width: 130px;
+}
+
+.eta-metrics-col {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.eta-pill {
+  background: linear-gradient(180deg, #212733, #13171f);
+  border: 1px solid #40495b;
+  border-left: 4px solid #ffcf00;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.eta-pill-label {
+  display: block;
+  color: var(--eta-muted);
+  font-size: 0.84rem;
+  margin-bottom: 5px;
+}
+
+.eta-pill strong {
+  font-size: 1.45rem;
+  color: #f6f7fb;
+}
+
+.eta-side {
+  padding: 16px 12px;
+}
+
+.eta-actions {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.eta-action-btn {
+  border: 1px solid #3f4555;
+  background: linear-gradient(180deg, #303743 0%, #1f242d 100%);
+  color: #f3f5fa;
+  font-size: 1.24rem;
+  font-weight: 650;
+  line-height: 1.2;
+  border-radius: 12px;
+  min-height: 76px;
+  padding: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.eta-action-btn:hover {
+  border-color: #ffd000;
+}
+
+.eta-footer {
+  border-top: 2px solid var(--eta-stroke);
+  padding: 10px 14px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  background: linear-gradient(180deg, #2a3038, #1d222a);
+}
+
+.eta-foot-item {
+  font-size: 1.12rem;
+  color: #eceff4;
+  font-weight: 620;
+}
+
+.eta-foot-time {
+  color: #f8f8f8;
+}
+
+@media (max-width: 980px) {
+  .eta-top {
+    grid-template-columns: 1fr;
+  }
+
+  .eta-brand {
+    padding: 8px;
+  }
+
+  .eta-main {
+    grid-template-columns: 1fr;
+  }
+
+  .eta-stage {
+    border-right: 0;
+    border-bottom: 2px solid var(--eta-stroke);
+  }
+
+  .eta-grid-kessel,
+  .eta-grid-puffer,
+  .eta-grid-hk,
+  .eta-grid-efilter,
+  .eta-grid-sys {
+    grid-template-columns: 1fr;
+  }
+
+  .eta-status-box {
+    font-size: 1.5rem;
+  }
+
+  .eta-icon {
+    min-width: 64px;
+    min-height: 42px;
+  }
+
+  .eta-action-btn {
+    min-height: 58px;
+    font-size: 1rem;
+  }
+
+  .eta-footer {
+    flex-direction: column;
+  }
+}
