@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react'
 
-const API = '/api/wallbox'
+const API = 'http://192.168.188.97:8083/api/wallbox'
 
 export default function GoE() {
   const [status, setStatus] = useState(null)
   const [sending, setSending] = useState(false)
   const [feedback, setFeedback] = useState(null)
+  const [timeFrom, setTimeFrom] = useState('00:00')
+  const [timeTo, setTimeTo] = useState('00:00')
 
   // Aktuellen Status laden
   const loadStatus = async () => {
@@ -154,6 +156,31 @@ export default function GoE() {
           </button>
           <button style={btnStyle('#8b5cf6')} disabled={sending} onClick={() => sendSet('psm', 2)}>
             3-phasig
+          </button>
+        </div>
+      </div>
+
+      {/* Zeitfenster setzen (nur Uhrzeit, 0-24) */}
+      <div style={{ ...cardStyle, marginBottom: 16 }}>
+        <h3 style={{ marginTop: 0, color: '#374151' }}>⏱️ Zeitfenster setzen</h3>
+        <p style={{ color: '#6b7280', fontSize: 14, margin: '0 0 12px' }}>
+          Zwei Uhrzeiten (HH:MM), unabhängig vom Datum
+        </p>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <label style={{ display: 'flex', flexDirection: 'column', fontSize: 12, color: '#6b7280' }}>
+            Von
+            <input type="time" value={timeFrom} onChange={e => setTimeFrom(e.target.value)} style={{ marginTop: 6, padding: '6px 8px', borderRadius: 6, border: '1px solid #e5e7eb' }} />
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', fontSize: 12, color: '#6b7280' }}>
+            Bis
+            <input type="time" value={timeTo} onChange={e => setTimeTo(e.target.value)} style={{ marginTop: 6, padding: '6px 8px', borderRadius: 6, border: '1px solid #e5e7eb' }} />
+          </label>
+          <button
+            style={btnStyle('#f59e0b')}
+            disabled={sending}
+            onClick={() => sendSet('ato', { from: timeFrom, to: timeTo })}
+          >
+            Zeitfenster senden
           </button>
         </div>
       </div>
