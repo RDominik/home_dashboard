@@ -312,7 +312,7 @@ func add_variable_to_set(varSet string, in []Object) {
 
 	for _, obj := range in {
 		// Add current node first, then recurse into children.
-		create_variableSet(varSet, obj.URI)
+		create_variableSet(varSet, obj.URI)s
 		if obj.Objects != nil {
 			add_variable_to_set(varSet, obj.Objects)
 		}
