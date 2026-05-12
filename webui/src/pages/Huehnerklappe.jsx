@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 
-const API = 'http://192.168.188.97:8083/api/huehnerklappe'
+const API = '/api/huehnerklappe'
 
 export default function Huehnerklappe() {
     const [sleepTime, setSleepTime] = useState(60) // default 60 Sekunden
@@ -30,18 +30,18 @@ export default function Huehnerklappe() {
   }, [])
 
   // Befehl senden
-  const sendCommand = async (command, params = {}) => {
+  const sendCommand = async (key, value = null) => {
     setSending(true)
     setFeedback(null)
     try {
-      const r = await fetch(`${API}/set`, {
+      const r = await fetch(`${API}/nano/esp32`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command, ...params }),
+        body: JSON.stringify({ key, value }),
       })
       const data = await r.json()
       if (data.ok) {
-        setFeedback({ type: 'success', msg: `✅ ${command} gesendet` })
+        setFeedback({ type: 'success', msg: `✅ ${key} gesendet` })
       } else {
         setFeedback({ type: 'error', msg: `❌ ${data.error}` })
       }
@@ -114,13 +114,13 @@ export default function Huehnerklappe() {
       <div style={{ ...cardStyle }}>
         <h3 style={{ marginTop: 0, color: '#374151' }}>🔧 Klappe steuern</h3>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <button style={btnStyle('#10b981')} disabled={sending} onClick={() => sendCommand('open')}>
+          <button style={btnStyle('#10b981')} disabled={sending} onClick={() => sendCommand('engine','open')}>
             Öffnen
           </button>
-          <button style={btnStyle('#ef4444')} disabled={sending} onClick={() => sendCommand('close')}>
+          <button style={btnStyle('#ef4444')} disabled={sending} onClick={() => sendCommand('engine','close')}>
             Schließen
           </button>
-          <button style={btnStyle('#f59e0b')} disabled={sending} onClick={() => sendCommand('stop')}>
+          <button style={btnStyle('#f59e0b')} disabled={sending} onClick={() => sendCommand('engine','stop')}>
             Stop
           </button>
         </div>
@@ -139,7 +139,7 @@ export default function Huehnerklappe() {
           <button
             style={btnStyle('#6366f1')}
             disabled={sending}
-            onClick={() => sendCommand('sleep', { duration: sleepTime })}
+            onClick={() => sendCommand('engine/sleep', sleepTime )}
           >
             Controller schlafen lassen
           </button>
