@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"webgui-api/mqtt"
+	restpkg "webgui-api/rest"
 )
 
 var mqttManager *mqtt.Manager
@@ -251,14 +252,15 @@ func mqttStatus(w http.ResponseWriter, r *http.Request) {
 
 func heatingSummary(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, map[string]any{
-		"timestamp":     nowISO(),
-		"boiler_temp":   72.5,
-		"buffer_top":    68.3,
-		"buffer_bottom": 45.8,
-		"return_temp":   52.1,
-		"outside_temp":  3.4,
-		"feed_rate":     35,
-		"burner_status": "on",
+		"timestamp":       nowISO(),
+		"boiler_temp":     72.5,
+		"boiler_pressure": 1.89,
+		"buffer_top":      68.3,
+		"buffer_bottom":   45.8,
+		"return_temp":     52.1,
+		"outside_temp":    3.4,
+		"feed_rate":       35,
+		"burner_status":   "on",
 	})
 }
 
@@ -288,6 +290,86 @@ func heatingHistory(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---------- Main ----------
+// ---------- Hühnerklappe ----------
+const nanoSetPrefix = "nano/esp32"
+
+var chickenAllowedKeys = map[string]bool{
+	"engine": true, "engine/sleep": true,
+}
+
+type chickenSetRequest struct {
+	Key   string `json:"key"`
+	Value any    `json:"value"`
+}
+
+type huehnerklappeStatus struct {
+	Position   string `json:"position"`
+	LastAction string `json:"lastAction"`
+	Error      string `json:"error,omitempty"`
+	Battery    int    `json:"battery"`
+	WakeReason string `json:"wakeReason"`
+}
+
+func huehnerklappeStatusHandler(w http.ResponseWriter, r *http.Request) {
+	// TODO: Werte aus MQTT oder Hardware holen
+	// Beispiel-Daten:
+	status := huehnerklappeStatus{
+		Position:   "offen",
+		LastAction: "manuell",
+		Error:      "",
+		Battery:    87,
+		WakeReason: "Timer",
+	}
+	jsonResponse(w, status)
+}
+
+type huehnerklappeSetRequest struct {
+	Command  string `json:"command"`
+	Duration int    `json:"duration,omitempty"`
+}
+
+func huehnerklappeSetHandler(writer http.ResponseWriter, r *http.Request) {
+	// var req huehnerklappeSetRequest
+	// if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	// 	jsonError(w, http.StatusBadRequest, "Ungültiger JSON body")
+	// 	return
+	// }
+	// // TODO: Befehl an Hardware/MQTT senden
+	// log.Printf("Hühnerklappe: %s, Dauer: %d", req.Command, req.Duration)
+	// jsonResponse(w, map[string]any{"ok": true, "command": req.Command, "duration": req.Duration})
+
+	// Validierung
+	var req chickenSetRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(writer, http.StatusBadRequest, "Ungültiger JSON body")
+		return
+	}
+	print("Received wallbox set request:", req.Key, req.Value)
+	if !goeAllowedKeys[req.Key] {
+		keys := make([]string, 0, len(goeAllowedKeys))
+		for k := range goeAllowedKeys {
+			keys = append(keys, k)
+		}
+		jsonResponse(writer, map[string]any{
+			"ok":    false,
+			"error": fmt.Sprintf("Key '%s' nicht erlaubt. Erlaubt: %s", req.Key, strings.Join(keys, ", ")),
+		})
+		return
+	}
+
+	topic := fmt.Sprintf("%s/%s/set", goeSetPrefix, req.Key)
+	if err := mqttManager.Publish(topic, req.Value); err != nil {
+		jsonResponse(writer, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+
+	jsonResponse(writer, map[string]any{
+		"ok":    true,
+		"topic": topic,
+		"key":   req.Key,
+		"value": req.Value,
+	})
+}
 
 func main() {
 	// MQTT starten
@@ -299,6 +381,12 @@ func main() {
 	go mqttManager.Run()
 	defer mqttManager.Stop()
 
+	// REST worker also runs from main.
+	restService := restpkg.NewRestService("rest/rest_config.json", "webgui/rest/varset", 60*time.Second)
+	restService.Start(mqttManager)
+	defer restService.Stop()
+	log.Println("📡 REST service started from main")
+
 	// Router
 	mux := http.NewServeMux()
 
@@ -306,6 +394,10 @@ func main() {
 	mux.HandleFunc("/api/wallbox/status", wallboxStatus)
 	mux.HandleFunc("/api/wallbox/set", wallboxSet)
 	mux.HandleFunc("/api/wallbox/history", wallboxHistory)
+
+	// Hühnerklappe
+	mux.HandleFunc("/api/huehnerklappe/status", huehnerklappeStatusHandler)
+	mux.HandleFunc("/api/huehnerklappe/set", huehnerklappeSetHandler)
 
 	// Inverter
 	mux.HandleFunc("/api/inverter/summary", inverterSummary)
