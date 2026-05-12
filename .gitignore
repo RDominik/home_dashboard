@@ -2,3 +2,4 @@
 webui/node_modules/*
 previewConfig.json
 api/venv/*
+api/*
