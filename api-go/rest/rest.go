@@ -13,6 +13,8 @@ import (
 	"reflect"
 	"strings"
 	"time"
+
+	"webgui-api/mqtt"
 )
 
 type Eta_menu struct {
@@ -179,10 +181,10 @@ func (r *RestClient) varsetURL() string {
 	return fmt.Sprintf("%s/user/vars/%s", r.baseURL(), r.Varset)
 }
 
-// BuildVarsetFromConfig loads the REST target from JSON configuration and creates the configured variable set.
+// BuildVarSetFromConfig loads the REST target from JSON configuration and creates the configured variable set.
 // @param configPath Path to the JSON configuration file.
 // @return An error if loading the configuration, reading the menu, or creating the variable set fails.
-func BuildVarsetFromConfig(configPath string) error {
+func BuildVarSetFromConfig(configPath string) error {
 	// Load target settings from config first.
 	client, err := NewRest(configPath)
 	if err != nil {
@@ -191,25 +193,25 @@ func BuildVarsetFromConfig(configPath string) error {
 
 	// Parse menu and create/fill the configured variable set.
 	var eta Eta_menu
-	return parseEtaMenuToVarSet(client.menuURL(), client.varsetURL(), &eta)
+	return buildVarSetFromETAMenu(client.menuURL(), client.varsetURL(), &eta)
 }
 
-// Parse_eta_menu_to_varSet reads an ETA menu from the given URL and populates a variable set.
+// ParseETAMenuToVarSet reads an ETA menu from the given URL and populates a variable set.
 // @param url Source URL for the ETA menu XML.
 // @param menu Destination object that receives the parsed menu.
 // @return An error if the menu cannot be fetched or parsed, or if the variable set cannot be created.
-func Parse_eta_menu_to_varSet(url string, menu *Eta_menu) error {
+func ParseETAMenuToVarSet(url string, menu *Eta_menu) error {
 	// Backward-compatible default for legacy callers.
 	variableSet := "http://192.168.188.99:8080/user/vars/myset1"
-	return parseEtaMenuToVarSet(url, variableSet, menu)
+	return buildVarSetFromETAMenu(url, variableSet, menu)
 }
 
-// parseEtaMenuToVarSet fetches the ETA menu XML and creates/populates a variable set.
+// buildVarSetFromETAMenu fetches the ETA menu XML and creates/populates a variable set.
 // @param url Source URL for menu XML.
 // @param variableSet Target variable set URL.
 // @param menu Destination structure for parsed menu data.
 // @return An error if fetching, parsing, or creating the variable set fails.
-func parseEtaMenuToVarSet(url string, variableSet string, menu *Eta_menu) error {
+func buildVarSetFromETAMenu(url string, variableSet string, menu *Eta_menu) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	// Read current menu tree from ETA.
@@ -247,7 +249,7 @@ func parseEtaMenuToVarSet(url string, variableSet string, menu *Eta_menu) error 
 	}
 
 	// Ensure the target variable set exists.
-	warning, err := create_variableSet(variableSet, "")
+	warning, err := createVarSetEntry(variableSet, "")
 	if err != nil {
 		return fmt.Errorf("error when creating variable set: %w", err)
 	}
@@ -259,16 +261,16 @@ func parseEtaMenuToVarSet(url string, variableSet string, menu *Eta_menu) error 
 
 	// Add all discovered menu objects recursively to the set.
 	log.Printf("variable set created successfully")
-	add_variable_to_set(variableSet, menu.Menu.Fub.Objects)
+	addObjectsToVarSet(variableSet, menu.Menu.Fub.Objects)
 
 	return nil
 }
 
-// create_variableSet issues a PUT to create a variable set or add a single variable path.
+// createVarSetEntry issues a PUT to create a variable set or add a single variable path.
 // @param url Base variable set URL.
 // @param value Optional object URI suffix to add to the set.
 // @return Warning text for non-fatal API messages and an error for hard failures.
-func create_variableSet(url string, value string) (string, error) {
+func createVarSetEntry(url string, value string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	// Compose endpoint: base varset URL plus optional object URI.
@@ -305,16 +307,16 @@ func create_variableSet(url string, value string) (string, error) {
 	return "", nil
 }
 
-// add_variable_to_set recursively adds all object URIs from menu nodes to a variable set.
+// addObjectsToVarSet recursively adds all object URIs from menu nodes to a variable set.
 // @param varSet Target variable set URL.
 // @param in Input object tree.
-func add_variable_to_set(varSet string, in []Object) {
+func addObjectsToVarSet(varSet string, in []Object) {
 
 	for _, obj := range in {
 		// Add current node first, then recurse into children.
-		create_variableSet(varSet, obj.URI)s
+		createVarSetEntry(varSet, obj.URI)
 		if obj.Objects != nil {
-			add_variable_to_set(varSet, obj.Objects)
+			addObjectsToVarSet(varSet, obj.Objects)
 		}
 	}
 }
@@ -331,11 +333,11 @@ func deriveMenuURLFromVarSetURL(varSetURL string) (string, error) {
 	return varSetURL[:idx] + "/user/menu", nil
 }
 
-// Request_variableSet reads a variable set from the given URL into the provided output structure.
+// RequestVarSet reads a variable set from the given URL into the provided output structure.
 // @param url Source URL of the variable set.
 // @param out Destination structure for the parsed XML response.
 // @return An error if the request fails or the HTTP response is not successful.
-func Request_variableSet(url string, out *Varset_Head) error {
+func RequestVarSet(url string, out *Varset_Head) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	// Always release timeout context resources in this function.
 	defer cancel()
@@ -368,11 +370,11 @@ func Request_variableSet(url string, out *Varset_Head) error {
 			}
 
 			var eta Eta_menu
-			if err := parseEtaMenuToVarSet(menuURL, url, &eta); err != nil {
+			if err := buildVarSetFromETAMenu(menuURL, url, &eta); err != nil {
 				return fmt.Errorf("auto-create variable set failed: %w", err)
 			}
 
-			log.Printf("variable set created, will be available on next Request_variableSet call")
+			log.Printf("variable set created, will be available on next RequestVarSet call")
 			return nil
 		}
 
@@ -395,24 +397,87 @@ func Request_variableSet(url string, out *Varset_Head) error {
 	return nil
 }
 
-// SendWallboxGet performs a sample GET request against the configured wallbox endpoint.
-func SendWallboxGet() {
+// PublishVariableSetLoop requests the configured variable set in a periodic loop
+// and publishes the response to the provided MQTT topic.
+// @param ctx Cancellation context controlling the lifetime of the polling loop.
+// @param restConfigPath Path to REST JSON configuration.
+// @param mqttManager MQTT manager instance used for publish calls.
+// @param topic MQTT topic used to publish the variable set payload.
+// @param interval Polling interval. If <= 0, 60s is used.
+// @return An error if configuration is invalid or mqttManager is nil.
+func PublishVariableSetLoop(ctx context.Context, restConfigPath string, mqttManager *mqtt.Manager, topic string, interval time.Duration) error {
+	// Load REST endpoint configuration (includes predefined variable set name).
+	restClient, err := NewRest(restConfigPath)
+	if err != nil {
+		return err
+	}
+
+	// Use default polling period when caller does not provide one.
+	if interval <= 0 {
+		interval = 60 * time.Second
+	}
+
+	if mqttManager == nil {
+		return fmt.Errorf("mqtt manager must not be nil")
+	}
+
+	varsetURL := restClient.varsetURL()
+	// pollAndPublish executes one full cycle: read varset and publish it to MQTT.
+	pollAndPublish := func() {
+		var payload Varset_Head
+		// Read the current variable set from the REST target.
+		if err := RequestVarSet(varsetURL, &payload); err != nil {
+			log.Printf("request variable set failed: %v", err)
+			return
+		}
+
+		// Forward the structured payload to the configured MQTT topic.
+		if err := mqttManager.Publish(topic, payload); err != nil {
+			log.Printf("publish variable set to MQTT failed: %v", err)
+			return
+		}
+
+		log.Printf("variable set published to MQTT topic %s", topic)
+	}
+
+	// Run once immediately so callers do not wait for the first interval tick.
+	pollAndPublish()
+
+	// Ticker emits a signal on ticker.C every configured interval.
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	// Keep running until the caller cancels the context.
+	for {
+		select {
+		// Context cancellation is the stop signal for this long-running loop.
+		case <-ctx.Done():
+			return nil
+		// Each ticker event triggers the next read-and-publish cycle.
+		case <-ticker.C:
+			pollAndPublish()
+		}
+	}
+}
+
+// FetchWallboxVarSet performs a sample GET request against the configured wallbox endpoint.
+func FetchWallboxVarSet() {
 	var eta Eta_menu
 	// Example call path kept for manual verification/debugging.
 	log.Printf("fetching API request...")
-	if err := PostJSON2("http://192.168.188.99:8080/user/vars/myset1", nil, &eta); err != nil {
+	if err := FetchURLResponse("http://192.168.188.99:8080/user/vars/myset1", nil, &eta); err != nil {
 		log.Printf("error on API request: %v", err)
 		return
 	}
 	log.Printf("API request completed")
 }
 
-// PostJSON2 performs a GET request and optionally stores the raw or parsed response in dest.
+// FetchURLResponse performs a GET request and optionally stores the raw or parsed response in dest.
 // @param url Source URL to request.
 // @param payload Unused placeholder for compatibility with older call sites.
 // @param dest Optional destination for the response body.
 // @return An error if the request fails or the HTTP response is not successful.
-func PostJSON2(url string, payload any, dest any) error {
+func FetchURLResponse(url string, payload any, dest any) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
