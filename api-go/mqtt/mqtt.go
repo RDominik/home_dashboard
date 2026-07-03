@@ -13,7 +13,10 @@ import (
 	pahomqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
-// Manager handles MQTT subscriptions and publishing.
+// / @brief Verwaltet MQTT-Verbindung, Subscriptions und das Empfangen von Nachrichten.
+// /
+// / Der Manager stellt eine threadsichere Map aller empfangenen Topics bereit
+// / und verbindet sich automatisch neu, falls die Verbindung verloren geht.
 type Manager struct {
 	Broker string
 	Port   int
@@ -25,21 +28,34 @@ type Manager struct {
 	running  bool
 }
 
-// brokerTopics holds the topic lists nested under "topics" in the JSON.
+// / @brief Enthält die Topic-Listen aus dem Abschnitt "topics" der Konfigurationsdatei.
+// /
+// / Jedes Feld entspricht einem Gerät/Namespace und wird beim Laden der Config
+// / automatisch befüllt.
 type brokerTopics struct {
-	GoE    []string `json:"goE"`
-	Goodwe []string `json:"goodwe"`
+	GoE      []string `json:"goE"`
+	Goodwe   []string `json:"goodwe"`
+	NanoMqtt []string `json:"nano_mqtt"`
 }
 
-// brokerConfig mirrors the JSON config file structure.
+// / @brief Spiegelt die Struktur der JSON-Konfigurationsdatei wider.
+// /
+// / Wird beim Einlesen der Datei per json.Unmarshal befüllt.
 type brokerConfig struct {
 	BrokerIP string       `json:"broker_ip"`
 	Port     int          `json:"port"`
 	Topics   brokerTopics `json:"topics"`
 }
 
-// NewManager creates a Manager from a config file.
-// If configPath is empty, it looks for MQTT_CONFIG env or broker_config.json next to the binary.
+// / @brief Erstellt einen neuen MQTT-Manager aus einer Konfigurationsdatei.
+// /
+// / Sucht die Konfigurationsdatei in folgender Reihenfolge:
+// /  1. übergebener configPath
+// /  2. Umgebungsvariable MQTT_CONFIG
+// /  3. broker_config.json im Arbeitsverzeichnis oder neben der Binary
+// /
+// / @param configPath Pfad zur JSON-Konfigurationsdatei; leer = automatische Suche.
+// / @return Zeiger auf den initialisierten Manager oder ein Fehler beim Parsen der Config.
 func NewManager(configPath string) (*Manager, error) {
 
 	// 1. Config-Pfad finden, falls nicht angegeben
@@ -79,6 +95,7 @@ func NewManager(configPath string) (*Manager, error) {
 	var topics []string
 	topics = append(topics, cfg.Topics.GoE...)
 	topics = append(topics, cfg.Topics.Goodwe...)
+	topics = append(topics, cfg.Topics.NanoMqtt...)
 
 	return &Manager{
 		Broker:   cfg.BrokerIP,
@@ -88,7 +105,12 @@ func NewManager(configPath string) (*Manager, error) {
 	}, nil
 }
 
-// Messages returns a copy of all received messages.
+// / @brief Gibt eine threadsichere Kopie aller bisher empfangenen MQTT-Nachrichten zurück.
+// /
+// / Der Schlüssel der Map ist der abgeleitete Topic-Kurzname (z. B. "battery_soc"),
+// / der Wert ist entweder ein geparster JSON-Wert oder ein Rohstring.
+// /
+// / @return Kopie der empfangenen Nachrichten-Map.
 func (mqtt_manager *Manager) Messages() map[string]any {
 	mqtt_manager.mutex.RLock()
 	defer mqtt_manager.mutex.RUnlock()
@@ -99,7 +121,9 @@ func (mqtt_manager *Manager) Messages() map[string]any {
 	return mqtt_map
 }
 
-// IsConnected reports whether the MQTT client is currently connected.
+// / @brief Gibt an, ob der MQTT-Client aktuell mit dem Broker verbunden ist.
+// /
+// / @return true wenn verbunden, false wenn nicht initialisiert oder getrennt.
 func (mqtt_manager *Manager) IsConnected() bool {
 	if mqtt_manager == nil || mqtt_manager.client == nil {
 		return false
@@ -107,7 +131,14 @@ func (mqtt_manager *Manager) IsConnected() bool {
 	return mqtt_manager.client.IsConnected()
 }
 
-// Publish sends a message to a topic.
+// / @brief Veröffentlicht eine Nachricht auf einem MQTT-Topic.
+// /
+// / Der Wert wird automatisch als JSON serialisiert, bevor er gesendet wird.
+// / Gibt einen Fehler zurück, wenn der Client nicht verbunden ist.
+// /
+// / @param topic  Das MQTT-Topic, auf dem veröffentlicht werden soll.
+// / @param value  Der zu sendende Wert (wird JSON-kodiert).
+// / @return Fehler oder nil bei Erfolg.
 func (mqtt_manager *Manager) Publish(topic string, value any) error {
 	if mqtt_manager.client == nil || !mqtt_manager.client.IsConnected() {
 		return fmt.Errorf("MQTT client is not connected")
@@ -123,8 +154,15 @@ func (mqtt_manager *Manager) Publish(topic string, value any) error {
 	return nil
 }
 
-// Run connects to the broker, subscribes, and listens forever.
-// Call this in a goroutine: go manager.Run()
+// / @brief Verbindet sich mit dem MQTT-Broker, abonniert alle konfigurierten Topics
+// /        und empfängt Nachrichten dauerhaft in einer Schleife.
+// /
+// / Bei Verbindungsverlust wird automatisch nach einem konfigurierbaren Intervall
+// / ein Reconnect-Versuch unternommen. Sollte als Goroutine gestartet werden:
+// /
+// /   go manager.Run()
+// /
+// / Läuft so lange, bis Stop() aufgerufen wird.
 func (mqtt_manager *Manager) Run() {
 	mqtt_manager.running = true
 	reconnectInterval := 5 * time.Second
@@ -181,7 +219,10 @@ func (mqtt_manager *Manager) Run() {
 	log.Println("🛑 MQTT manager stopped")
 }
 
-// Stop signals the run loop to exit.
+// / @brief Beendet die Run-Schleife und trennt die Verbindung zum Broker.
+// /
+// / Setzt das running-Flag auf false und ruft Disconnect auf dem Client auf,
+// / falls dieser noch initialisiert ist.
 func (mqtt_manager *Manager) Stop() {
 	mqtt_manager.running = false
 	if mqtt_manager.client != nil {
@@ -189,7 +230,18 @@ func (mqtt_manager *Manager) Stop() {
 	}
 }
 
-// handleMessage processes incoming MQTT messages.
+// / @brief Callback-Funktion für eingehende MQTT-Nachrichten.
+// /
+// / Versucht den Payload als JSON zu parsen; bei Misserfolg wird der Rohstring gespeichert.
+// / Der Map-Schlüssel wird aus dem Topic abgeleitet, indem die ersten beiden Segmente
+// / (Namespace + Geräte-ID) entfernt und die verbleibenden Segmente mit "_" verbunden werden.
+// /
+// / Beispiele:
+// /   "goodwe/9020KETT/battery/soc" → "battery_soc"
+// /   "go-eCharger/254959/nrg"      → "nrg"
+// /
+// / @param client  Der MQTT-Client, der die Nachricht empfangen hat (nicht verwendet).
+// / @param msg     Die empfangene MQTT-Nachricht mit Topic und Payload.
 func (mqtt_manager *Manager) handleMessage(client pahomqtt.Client, msg pahomqtt.Message) {
 	topic := msg.Topic()
 	payload := msg.Payload()
