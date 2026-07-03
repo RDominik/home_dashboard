@@ -1,11 +1,10 @@
 package main
 
 import (
-	"context"
+	"encoding/json"
 	"flag"
 	"log"
-	"os/signal"
-	"syscall"
+	"os"
 	"time"
 
 	"webgui-api/mqtt"
@@ -31,14 +30,45 @@ func main() {
 	go mqttManager.Run()
 	defer mqttManager.Stop()
 
-	service := restpkg.NewRestService(restConfigPath, topic, interval)
-	service.Start(mqttManager)
-	defer service.Stop()
+	deadline := time.Now().Add(10 * time.Second)
+	for !mqttManager.IsConnected() {
+		if time.Now().After(deadline) {
+			log.Fatal("❌ MQTT connection timeout")
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
+	restClient, err := restpkg.NewRest(restConfigPath)
+	if err != nil {
+		log.Fatalf("❌ REST config error: %v", err)
+	}
+	menu, err := restpkg.FetchETAMenu(restClient.MenuURL())
+	if err != nil {
+		log.Fatalf("❌ FetchETAMenu error: %v", err)
+	}
+	menuJSON, err := json.MarshalIndent(menu, "", "  ")
+	if err != nil {
+		log.Fatalf("❌ menu marshal error: %v", err)
+	}
+	if err := os.WriteFile("eta_menu.json", menuJSON, 0644); err != nil {
+		log.Fatalf("❌ write eta_menu.json: %v", err)
+	}
+	log.Println("📄 ETA menu written to eta_menu.json")
 
-	log.Println("📡 REST service is running, waiting for shutdown signal...")
-	<-ctx.Done()
-	log.Println("📡 Shutdown signal received")
+	payload, err := restpkg.PublishVariableSetOnce(restConfigPath, mqttManager, topic)
+	if err != nil {
+		log.Fatalf("❌ REST publish error: %v", err)
+	}
+
+	payloadJSON, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		log.Fatalf("❌ payload marshal error: %v", err)
+	}
+	log.Printf("📦 REST payload:\n%s", payloadJSON)
+	if err := os.WriteFile("varset_payload.json", payloadJSON, 0644); err != nil {
+		log.Fatalf("❌ write varset_payload.json: %v", err)
+	}
+	log.Println("📄 Variable set payload written to varset_payload.json")
+
+	log.Println("📡 REST variable set published once")
 }
