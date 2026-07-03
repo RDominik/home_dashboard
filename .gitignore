@@ -1,5 +1,6 @@
 
 webui/node_modules/*
+webui/dist/
 previewConfig.json
 api/venv/*
 api/*
