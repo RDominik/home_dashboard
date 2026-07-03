@@ -69,12 +69,13 @@ type Varset_Head struct {
 type Varset struct {
 	XMLName xml.Name          `xml:"vars"`
 	URI     string            `xml:"uri,attr"`
-	Objects []Varset_Variable `xml:"object"` // Erste Ebene der Objekte
+	Objects []Varset_Variable `xml:"variable"` // Variablen im Varset-Response
 }
 
 type Varset_Variable struct {
 	XMLName       xml.Name `xml:"variable"`
 	URI           string   `xml:"uri,attr"`
+	Name          string   `xml:"-" json:"Name,omitempty"`
 	StrValue      string   `xml:"strValue,attr"`
 	Unit          string   `xml:"unit,attr"`
 	DecPlaces     string   `xml:"decPlaces,attr"`
@@ -169,10 +170,15 @@ func (r *RestClient) baseURL() string {
 	return fmt.Sprintf("http://%s:%d", r.Client, r.Port)
 }
 
-// menuURL builds the menu endpoint URL for the ETA device.
+// MenuURL builds the menu endpoint URL for the ETA device.
 // @return URL to /user/menu.
-func (r *RestClient) menuURL() string {
+func (r *RestClient) MenuURL() string {
 	return r.baseURL() + "/user/menu"
+}
+
+// menuURL is the unexported alias kept for internal callers.
+func (r *RestClient) menuURL() string {
+	return r.MenuURL()
 }
 
 // varsetURL builds the configured variable set endpoint URL.
@@ -206,47 +212,77 @@ func ParseETAMenuToVarSet(url string, menu *Eta_menu) error {
 	return buildVarSetFromETAMenu(url, variableSet, menu)
 }
 
+// BuildURINameMap recursively walks the ETA menu tree and returns a map of
+// URI (without leading "/") to the display name of each menu object.
+func BuildURINameMap(menu *Eta_menu) map[string]string {
+	result := make(map[string]string)
+	for _, obj := range menu.Menu.Fub.Objects {
+		collectURINames(obj, result)
+	}
+	return result
+}
+
+// collectURINames is the recursive helper for BuildURINameMap.
+func collectURINames(obj Object, m map[string]string) {
+	uri := strings.TrimPrefix(obj.URI, "/")
+	if uri != "" && obj.Name != "" {
+		m[uri] = obj.Name
+	}
+	for _, child := range obj.Objects {
+		collectURINames(child, m)
+	}
+}
+
+// FetchETAMenu fetches and parses the ETA menu XML from the given URL.
+// @param url Source URL for the ETA menu XML (e.g. http://<host>:<port>/user/menu).
+// @return The parsed Eta_menu structure or an error if fetching or parsing fails.
+func FetchETAMenu(url string) (Eta_menu, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return Eta_menu{}, err
+	}
+	req.Header.Set("Accept", "application/xml, application/json, text/xml, */*")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return Eta_menu{}, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return Eta_menu{}, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		snippet := string(body)
+		if len(snippet) > 200 {
+			snippet = snippet[:200]
+		}
+		return Eta_menu{}, fmt.Errorf("status %d: %s", resp.StatusCode, snippet)
+	}
+
+	var menu Eta_menu
+	if err := xml.Unmarshal(body, &menu); err != nil {
+		return Eta_menu{}, fmt.Errorf("parse error: %w", err)
+	}
+	return menu, nil
+}
+
 // buildVarSetFromETAMenu fetches the ETA menu XML and creates/populates a variable set.
 // @param url Source URL for menu XML.
 // @param variableSet Target variable set URL.
 // @param menu Destination structure for parsed menu data.
 // @return An error if fetching, parsing, or creating the variable set fails.
 func buildVarSetFromETAMenu(url string, variableSet string, menu *Eta_menu) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	// Read current menu tree from ETA.
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	// Fetch and parse menu via shared helper.
+	fetched, err := FetchETAMenu(url)
 	if err != nil {
 		return err
 	}
-	// Ask primarily for XML (JSON remains fallback).
-	req.Header.Set("Accept", "application/xml, application/json, text/xml, */*")
-
-	resp, err := httpClient.Do(req)
-
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return err
-	}
-	// Surface non-success responses with a short body snippet.
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		snippet := string(body)
-		if len(snippet) > 200 {
-			snippet = snippet[:200]
-		}
-		return fmt.Errorf("status %d: %s", resp.StatusCode, snippet)
-	}
-
-	// Parse the full menu into the caller-provided struct.
-	err = xml.Unmarshal([]byte(body), menu)
-	if err != nil {
-		return fmt.Errorf("parse error: %w", err)
-	}
+	*menu = fetched
 
 	// Ensure the target variable set exists.
 	warning, err := createVarSetEntry(variableSet, "")
@@ -397,6 +433,79 @@ func RequestVarSet(url string, out *Varset_Head) error {
 	return nil
 }
 
+// VarPayload is the slim per-variable payload published to MQTT.
+type VarPayload struct {
+	Name          string `json:"Name"`
+	StrValue      string `json:"StrValue"`
+	Unit          string `json:"Unit"`
+	DecPlaces     string `json:"DecPlaces"`
+	ScaleFactor   string `json:"ScaleFactor"`
+	AdvTextOffset string `json:"AdvTextOffset"`
+}
+
+// PublishVariableSetOnce requests the configured variable set once and publishes
+// each variable individually to its own MQTT topic (eta/<URI>).
+// @param restConfigPath Path to REST JSON configuration.
+// @param mqttManager MQTT manager instance used for publish calls.
+// @param topic Unused – kept for interface compatibility; topic is derived as "eta/<URI>".
+// @return The fetched (and name-enriched) variable set payload and an error if
+//
+//	configuration is invalid, mqttManager is nil, reading fails, or any publish fails.
+func PublishVariableSetOnce(restConfigPath string, mqttManager *mqtt.Manager, topic string) (Varset_Head, error) {
+	// Load REST endpoint configuration (includes predefined variable set name).
+	restClient, err := NewRest(restConfigPath)
+	if err != nil {
+		return Varset_Head{}, err
+	}
+
+	if mqttManager == nil {
+		return Varset_Head{}, fmt.Errorf("mqtt manager must not be nil")
+	}
+
+	var payload Varset_Head
+	if err := RequestVarSet(restClient.varsetURL(), &payload); err != nil {
+		return Varset_Head{}, err
+	}
+
+	// Enrich variables with display names from the ETA menu.
+	menu, err := FetchETAMenu(restClient.menuURL())
+	if err != nil {
+		log.Printf("[REST] could not fetch menu for name mapping: %v", err)
+	} else {
+		uriNameMap := BuildURINameMap(&menu)
+		for i := range payload.Variable.Objects {
+			if name, ok := uriNameMap[payload.Variable.Objects[i].URI]; ok {
+				payload.Variable.Objects[i].Name = name
+			}
+		}
+	}
+
+	// Publish each variable value to its own topic: "eta/<URI>/<field>"
+	for _, v := range payload.Variable.Objects {
+		baseTopic := "eta/" + v.URI
+
+		// Publish each field as a separate topic with scalar value
+		fields := map[string]string{
+			"Name":          v.Name,
+			"StrValue":      v.StrValue,
+			"Unit":          v.Unit,
+			"DecPlaces":     v.DecPlaces,
+			"ScaleFactor":   v.ScaleFactor,
+			"AdvTextOffset": v.AdvTextOffset,
+		}
+
+		for fieldName, fieldValue := range fields {
+			topic := baseTopic + "/" + fieldName
+			if err := mqttManager.Publish(topic, fieldValue); err != nil {
+				log.Printf("[REST] publish failed for topic %s: %v", topic, err)
+			}
+		}
+	}
+
+	log.Printf("published %d variables to MQTT (prefix eta/)", len(payload.Variable.Objects))
+	return payload, nil
+}
+
 // PublishVariableSetLoop requests the configured variable set in a periodic loop
 // and publishes the response to the provided MQTT topic.
 // @param ctx Cancellation context controlling the lifetime of the polling loop.
@@ -406,38 +515,17 @@ func RequestVarSet(url string, out *Varset_Head) error {
 // @param interval Polling interval. If <= 0, 60s is used.
 // @return An error if configuration is invalid or mqttManager is nil.
 func PublishVariableSetLoop(ctx context.Context, restConfigPath string, mqttManager *mqtt.Manager, topic string, interval time.Duration) error {
-	// Load REST endpoint configuration (includes predefined variable set name).
-	restClient, err := NewRest(restConfigPath)
-	if err != nil {
-		return err
-	}
-
 	// Use default polling period when caller does not provide one.
 	if interval <= 0 {
 		interval = 60 * time.Second
 	}
 
-	if mqttManager == nil {
-		return fmt.Errorf("mqtt manager must not be nil")
-	}
-
-	varsetURL := restClient.varsetURL()
 	// pollAndPublish executes one full cycle: read varset and publish it to MQTT.
 	pollAndPublish := func() {
-		var payload Varset_Head
-		// Read the current variable set from the REST target.
-		if err := RequestVarSet(varsetURL, &payload); err != nil {
+		if _, err := PublishVariableSetOnce(restConfigPath, mqttManager, topic); err != nil {
 			log.Printf("request variable set failed: %v", err)
 			return
 		}
-
-		// Forward the structured payload to the configured MQTT topic.
-		if err := mqttManager.Publish(topic, payload); err != nil {
-			log.Printf("publish variable set to MQTT failed: %v", err)
-			return
-		}
-
-		log.Printf("variable set published to MQTT topic %s", topic)
 	}
 
 	// Run once immediately so callers do not wait for the first interval tick.
