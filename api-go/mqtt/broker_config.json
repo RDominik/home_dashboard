@@ -22,6 +22,18 @@
             "goodwe/9020KETT232W0041/battery_soc",
             "goodwe/9020KETT232W0041/pbattery",
             "goodwe/254959/battery/power"
+        ],
+        "nano_mqtt": [
+            "nano/esp32/engine/status",
+            "nano/esp32/sleepms/status",
+            "nano/esp32/status",
+            "nano/esp32/alive_counter",
+            "nano/esp32/sleepms/wakeup_reason",
+            "nano/esp32/engine/set",
+            "nano/esp32/battery/monitor",
+            "nano/esp32/battery/voltage",
+            "nano/esp32/battery/percent",
+            "nano/esp32/battery/rate"
         ]
     }    
 }
