@@ -11,6 +11,7 @@ import (
 
 	"webgui-api/mqtt"
 	restpkg "webgui-api/rest"
+	wallboxpkg "webgui-api/wallbox"
 )
 
 var mqttManager *mqtt.Manager
@@ -45,94 +46,6 @@ func cors(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
-}
-
-// ---------- Wallbox ----------
-
-// go-eCharger MQTT SET topic prefix
-const goeSetPrefix = "go-eCharger/254959"
-
-var goeAllowedKeys = map[string]bool{
-	"amp": true, "frc": true, "psm": true, "dwo": true, "alw": true, "ato": true,
-}
-
-func wallboxStatus(w http.ResponseWriter, r *http.Request) {
-	status := mqttManager.Messages()
-
-	// nrg: default to empty array with 16 zeros
-	nrg, ok := status["nrg"]
-	if !ok {
-		nrg = make([]any, 16)
-	}
-
-	jsonResponse(w, map[string]any{
-		"timestamp":   nowISO(),
-		"amp":         status["amp"],
-		"frc":         status["frc"],
-		"psm":         status["psm"],
-		"car":         status["car"],
-		"nrg":         nrg,
-		"modelStatus": status["modelStatus"],
-	})
-}
-
-type wallboxSetRequest struct {
-	Key   string `json:"key"`
-	Value any    `json:"value"`
-}
-
-func wallboxSet(writer http.ResponseWriter, r *http.Request) {
-	var req wallboxSetRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(writer, http.StatusBadRequest, "Ungültiger JSON body")
-		return
-	}
-	print("Received wallbox set request:", req.Key, req.Value)
-	if !goeAllowedKeys[req.Key] {
-		keys := make([]string, 0, len(goeAllowedKeys))
-		for k := range goeAllowedKeys {
-			keys = append(keys, k)
-		}
-		jsonResponse(writer, map[string]any{
-			"ok":    false,
-			"error": fmt.Sprintf("Key '%s' nicht erlaubt. Erlaubt: %s", req.Key, strings.Join(keys, ", ")),
-		})
-		return
-	}
-
-	topic := fmt.Sprintf("%s/%s/set", goeSetPrefix, req.Key)
-	if err := mqttManager.Publish(topic, req.Value); err != nil {
-		jsonResponse(writer, map[string]any{"ok": false, "error": err.Error()})
-		return
-	}
-
-	jsonResponse(writer, map[string]any{
-		"ok":    true,
-		"topic": topic,
-		"key":   req.Key,
-		"value": req.Value,
-	})
-}
-
-func wallboxHistory(w http.ResponseWriter, r *http.Request) {
-	interval := r.URL.Query().Get("interval")
-	if interval == "" {
-		interval = "5m"
-	}
-
-	var points []map[string]any
-	end := time.Now().UTC()
-	start := end.Add(-2 * time.Hour)
-	t := start
-	for !t.After(end) {
-		points = append(points, map[string]any{
-			"t":             t.Format("2006-01-02T15:04:05.000Z"),
-			"amp":           6 + ((t.Minute() % 5) - 2),
-			"currentEnergy": 1000 + (t.Minute() * 3),
-		})
-		t = t.Add(5 * time.Minute)
-	}
-	jsonResponse(w, map[string]any{"series": points, "interval": interval})
 }
 
 // ---------- Inverter ----------
@@ -344,10 +257,10 @@ func huehnerklappeSetHandler(writer http.ResponseWriter, r *http.Request) {
 		jsonError(writer, http.StatusBadRequest, "Ungültiger JSON body")
 		return
 	}
-	print("Received wallbox set request:", req.Key, req.Value)
-	if !goeAllowedKeys[req.Key] {
-		keys := make([]string, 0, len(goeAllowedKeys))
-		for k := range goeAllowedKeys {
+	print("Received huehnerklappe set request:", req.Key, req.Value)
+	if !chickenAllowedKeys[req.Key] {
+		keys := make([]string, 0, len(chickenAllowedKeys))
+		for k := range chickenAllowedKeys {
 			keys = append(keys, k)
 		}
 		jsonResponse(writer, map[string]any{
@@ -357,7 +270,7 @@ func huehnerklappeSetHandler(writer http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	topic := fmt.Sprintf("%s/%s/set", goeSetPrefix, req.Key)
+	topic := fmt.Sprintf("%s/%s/set", nanoSetPrefix, req.Key)
 	if err := mqttManager.Publish(topic, req.Value); err != nil {
 		jsonResponse(writer, map[string]any{"ok": false, "error": err.Error()})
 		return
@@ -391,9 +304,10 @@ func main() {
 	mux := http.NewServeMux()
 
 	// Wallbox
-	mux.HandleFunc("/api/wallbox/status", wallboxStatus)
-	mux.HandleFunc("/api/wallbox/set", wallboxSet)
-	mux.HandleFunc("/api/wallbox/history", wallboxHistory)
+	wb := wallboxpkg.NewHandler(mqttManager)
+	mux.HandleFunc("/api/wallbox/status", wb.Status)
+	mux.HandleFunc("/api/wallbox/set", wb.Set)
+	mux.HandleFunc("/api/wallbox/history", wb.History)
 
 	// Hühnerklappe
 	mux.HandleFunc("/api/huehnerklappe/status", huehnerklappeStatusHandler)
