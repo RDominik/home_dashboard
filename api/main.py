@@ -47,6 +47,12 @@ def now_iso():
     return datetime.utcnow().isoformat() + 'Z'
 
 
+# go-eCharger MQTT SET topic prefix
+GOE_SET_PREFIX = "go-eCharger/254959"
+# Erlaubte Keys zum Setzen (Whitelist)
+GOE_ALLOWED_KEYS = {"amp", "frc", "psm", "dwo", "alw"}
+
+
 
 @app.get("/api/wallbox/status")
 async def wallbox_status() -> Dict[str, Any]:
@@ -56,11 +62,31 @@ async def wallbox_status() -> Dict[str, Any]:
         "timestamp": now_iso(),
         "amp": status.get("amp", 0),
         "frc": status.get("frc", 0),
-        "psm": 0,
-        "car": 2,
-        "nrg": [0]*11 + [1234],
-        "modelStatus": 1,
+        "psm": status.get("psm", 0),
+        "car": status.get("car", 0),
+        "nrg": status.get("nrg", [0]*16),
+        "modelStatus": status.get("modelStatus", 0),
     }
+
+
+from pydantic import BaseModel
+
+class WallboxSetRequest(BaseModel):
+    key: str
+    value: Any
+
+@app.post("/api/wallbox/set")
+async def wallbox_set(req: WallboxSetRequest) -> Dict[str, Any]:
+    """SET einen Wert am go-eCharger über MQTT."""
+    if req.key not in GOE_ALLOWED_KEYS:
+        return {"ok": False, "error": f"Key '{req.key}' nicht erlaubt. Erlaubt: {GOE_ALLOWED_KEYS}"}
+    
+    topic = f"{GOE_SET_PREFIX}/{req.key}/set"
+    try:
+        await mqtt_client.publish(topic, req.value)
+        return {"ok": True, "topic": topic, "key": req.key, "value": req.value}
+    except RuntimeError as e:
+        return {"ok": False, "error": str(e)}
 
 @app.get("/api/wallbox/history")
 async def wallbox_history(
@@ -96,6 +122,53 @@ async def inverter_summary():
         "pbattery": status.get("pbattery", 0),
         "car_power": car_power,
     }
+
+
+# --- System Update (git pull + rebuild) ---
+import subprocess
+
+@app.post("/api/system/update")
+async def system_update():
+    """Git pull + Docker Compose rebuild auf dem Host."""
+    repo_dir = "/repo"
+    results = []
+
+    # 1. git pull
+    try:
+        git = subprocess.run(
+            ["git", "pull"],
+            cwd=repo_dir,
+            capture_output=True, text=True, timeout=60
+        )
+        results.append({
+            "step": "git pull",
+            "ok": git.returncode == 0,
+            "stdout": git.stdout.strip(),
+            "stderr": git.stderr.strip(),
+        })
+        if git.returncode != 0:
+            return {"ok": False, "results": results}
+    except Exception as e:
+        return {"ok": False, "results": [{"step": "git pull", "ok": False, "stderr": str(e)}]}
+
+    # 2. docker compose build + up
+    try:
+        build = subprocess.run(
+            ["docker", "compose", "-f", "docker-compose.webui.yml", "up", "--build", "-d"],
+            cwd=repo_dir,
+            capture_output=True, text=True, timeout=300
+        )
+        results.append({
+            "step": "docker compose up --build -d",
+            "ok": build.returncode == 0,
+            "stdout": build.stdout.strip()[-500:] if build.stdout else "",
+            "stderr": build.stderr.strip()[-500:] if build.stderr else "",
+        })
+    except Exception as e:
+        results.append({"step": "docker compose up --build -d", "ok": False, "stderr": str(e)})
+
+    all_ok = all(r["ok"] for r in results)
+    return {"ok": all_ok, "results": results}
 
 
 # --- ETA Hackschnitzel-Heizung (Mock) ---
