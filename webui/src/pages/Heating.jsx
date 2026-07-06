@@ -13,6 +13,7 @@ export default function Heating() {
   const [d, setD] = useState(null)
   const [activeTab, setActiveTab] = useState('kessel')
   const [now, setNow] = useState(new Date())
+  const metrics = useMemo(() => mapEtaTreeToMetrics(d), [d])
 
   useEffect(() => {
     const base = window.location.origin.replace(':8080', ':8081')
@@ -28,9 +29,9 @@ export default function Heating() {
   }, [])
 
   const statusText = useMemo(() => {
-    if (!d) return 'Bereit'
-    return d.burner_status === 'on' ? 'Bereit' : 'Standby'
-  }, [d])
+    if (!metrics) return 'Bereit'
+    return /bereit|ein|on/i.test(String(metrics.burner_status ?? '')) ? 'Bereit' : 'Standby'
+  }, [metrics])
 
   return (
     <div className="eta-wrap">
@@ -59,10 +60,10 @@ export default function Heating() {
         <div className="eta-main">
           <section className="eta-stage">
             <div className="eta-status-box">{statusText}</div>
-            {activeTab === 'kessel' && <KesselSubpage d={d} />}
-            {activeTab === 'puffer' && <PufferSubpage d={d} />}
-            {activeTab === 'hk' && <HkSubpage d={d} />}
-            {activeTab === 'efilter' && <EFilterSubpage d={d} />}
+            {activeTab === 'kessel' && <KesselSubpage d={metrics} />}
+            {activeTab === 'puffer' && <PufferSubpage d={metrics} />}
+            {activeTab === 'hk' && <HkSubpage d={metrics} />}
+            {activeTab === 'efilter' && <EFilterSubpage d={metrics} />}
             {activeTab === 'sys' && <SysSubpage />}
           </section>
 
@@ -76,12 +77,73 @@ export default function Heating() {
         </div>
 
         <footer className="eta-footer">
-          <div className="eta-foot-item">Aussen: {fmt(d?.outside_temp)} C</div>
+          <div className="eta-foot-item">Aussen: {fmt(metrics?.outside_temp)} C</div>
           <div className="eta-foot-item eta-foot-time">{new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium', timeStyle: 'medium' }).format(now)}</div>
         </footer>
       </div>
     </div>
   )
+}
+
+function mapEtaTreeToMetrics(tree) {
+  if (!tree) return null
+
+  return {
+    boiler_temp: pickNumber(
+      tree?.eta?.Eingänge?.Kessel?.StrValue,
+      tree?.eta?.Kessel?.Kessel?.Kessel_Soll?.Angeforderte_Temperatur?.StrValue,
+      tree?.eta?.Kessel?.Rücklaufanhebung?.Rücklauf?.Rücklaufmischer?.Ist_Temperatur?.StrValue,
+    ),
+    boiler_pressure: pickNumber(
+      tree?.eta?.Eingänge?.Kesseldruck?.Kesseldruck?.StrValue,
+      tree?.eta?.Kessel?.Kesseldruck?.StrValue,
+    ),
+    buffer_top: pickNumber(
+      tree?.eta?.Eingänge?.Puffer_oben?.StrValue,
+      tree?.eta?.Puffer?.Puffer_oben?.StrValue,
+    ),
+    buffer_bottom: pickNumber(
+      tree?.eta?.Eingänge?.Puffer_unten?.StrValue,
+      tree?.eta?.Puffer?.Puffer_unten?.StrValue,
+    ),
+    return_temp: pickNumber(
+      tree?.eta?.Kessel?.Rücklaufanhebung?.Rücklauf?.Rücklaufmischer?.Ist_Temperatur?.StrValue,
+      tree?.eta?.Eingänge?.Rücklauf?.StrValue,
+    ),
+    outside_temp: pickNumber(
+      tree?.eta?.Eingänge?.Außentemperatur?.StrValue,
+      tree?.eta?.Außentemperatur?.StrValue,
+    ),
+    feed_rate: pickNumber(
+      tree?.eta?.Austragung?.Stoker_Einheit?.Taktrate?.StrValue,
+      tree?.eta?.Ausgänge?.Austragung?.Taktrate?.StrValue,
+    ),
+    burner_status: pickString(
+      tree?.eta?.Kessel?.StrValue,
+      tree?.eta?.Kessel?.Entaschung?.Rost_Zustand?.Rost?.Zustand?.StrValue,
+    ),
+  }
+}
+
+function pickString(...values) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim() !== '') {
+      return value
+    }
+  }
+  return null
+}
+
+function pickNumber(...values) {
+  for (const value of values) {
+    if (value == null) continue
+    const normalized = String(value).replace(/\./g, '').replace(',', '.').trim()
+    const parsed = Number.parseFloat(normalized)
+    if (Number.isFinite(parsed)) {
+      return parsed
+    }
+  }
+  return null
 }
 
 function MetricPill({ label, value, unit }) {
