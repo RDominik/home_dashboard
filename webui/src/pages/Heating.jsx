@@ -192,7 +192,7 @@ function KesselSubpage({ d }) {
       <div className="eta-metrics-col">
         <MetricPill label="Kessel" value={fmt(d?.boiler_temp)} unit="C" />
         <MetricPill label="Druck" value={pressureValue == null ? '' : fmt(pressureValue)} unit={pressureValue == null ? '' : 'bar'} />
-        <MetricPill label="Rucklauf" value={fmt(d?.return_temp)} unit="C" />
+        <MetricPill label="Rücklauf" value={fmt(d?.return_temp)} unit="C" />
         <MetricPill label="Aussen" value={fmt(d?.outside_temp)} unit="C" />
       </div>
     </div>
