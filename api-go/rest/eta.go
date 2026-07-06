@@ -120,6 +120,12 @@ type nestedStore struct {
 
 var etaTree = &nestedStore{root: make(map[string]any)}
 
+// publishedValues hält den zuletzt erfolgreich gepublishten Wert pro Topic.
+// Damit werden bei PublishVariableSetOnce und publishMenuTopics nur Topics
+// tatsächlich an den Broker gesendet, deren Wert sich seit dem letzten
+// Publish-Zyklus geändert hat.
+var publishedValues = newTopicValueStore(256)
+
 // @brief Stores a scalar value in the hierarchical ETA in-memory tree.
 // @details
 // This method splits a slash-separated topic path and walks or creates nested
@@ -690,6 +696,12 @@ func publishMenuTopics(menu *EtaMenu, mqttManager *mqtt.Manager) {
 		if !ok {
 			continue
 		}
+
+		// Nur publishen wenn sich der Wert geändert hat.
+		if prev, ok := publishedValues.get(topic); ok && prev == value {
+			continue
+		}
+
 		etaTree.set(topic, value)
 
 		if i > 0 && i%menuPublishPauseEvery == 0 {
@@ -706,6 +718,7 @@ func publishMenuTopics(menu *EtaMenu, mqttManager *mqtt.Manager) {
 				return
 			}
 		}
+		publishedValues.set(topic, value)
 	}
 }
 
@@ -1070,15 +1083,23 @@ func PublishVariableSetOnce(restConfigPath string, mqttManager *mqtt.Manager, to
 	}
 
 	// Publish each variable value to its own topic: "eta/<menu-path>/<field>"
+	// Nur Topics mit geändertem Wert werden tatsächlich an den Broker gesendet.
+	changed := 0
 	for _, v := range payload.Variable.Objects {
 		topicPath := v.URI
 		if mappedTopic, ok := uriTopicMap[v.URI]; ok {
 			topicPath = mappedTopic
 		}
 		baseTopic := "eta/" + topicPath
-		etaTree.set(baseTopic, v.URI)
-		if err := mqttManager.Publish(baseTopic, v.URI); err != nil {
-			log.Printf("[REST] publish failed for topic %s: %v", baseTopic, err)
+
+		if prev, ok := publishedValues.get(baseTopic); !ok || prev != v.URI {
+			etaTree.set(baseTopic, v.URI)
+			if err := mqttManager.Publish(baseTopic, v.URI); err != nil {
+				log.Printf("[REST] publish failed for topic %s: %v", baseTopic, err)
+			} else {
+				publishedValues.set(baseTopic, v.URI)
+				changed++
+			}
 		}
 
 		// Publish each field as a separate topic with scalar value
@@ -1096,14 +1117,20 @@ func PublishVariableSetOnce(restConfigPath string, mqttManager *mqtt.Manager, to
 				continue
 			}
 			topic := baseTopic + "/" + fieldName
+			if prev, ok := publishedValues.get(topic); ok && prev == fieldValue {
+				continue
+			}
 			etaTree.set(topic, fieldValue)
 			if err := mqttManager.Publish(topic, fieldValue); err != nil {
 				log.Printf("[REST] publish failed for topic %s: %v", topic, err)
+			} else {
+				publishedValues.set(topic, fieldValue)
+				changed++
 			}
 		}
 	}
 
-	log.Printf("published %d variables to MQTT (prefix eta/)", len(payload.Variable.Objects))
+	log.Printf("published %d changed values to MQTT (total variables: %d)", changed, len(payload.Variable.Objects))
 	return payload, nil
 }
 
