@@ -161,47 +161,6 @@ func mqttStatus(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, map[string]any{"connected": connected, "messages": msgs})
 }
 
-// ---------- Heating (Mock) ----------
-
-func heatingSummary(w http.ResponseWriter, r *http.Request) {
-	jsonResponse(w, map[string]any{
-		"timestamp":       nowISO(),
-		"boiler_temp":     72.5,
-		"boiler_pressure": 1.89,
-		"buffer_top":      68.3,
-		"buffer_bottom":   45.8,
-		"return_temp":     52.1,
-		"outside_temp":    3.4,
-		"feed_rate":       35,
-		"burner_status":   "on",
-	})
-}
-
-func heatingHistory(w http.ResponseWriter, r *http.Request) {
-	interval := r.URL.Query().Get("interval")
-	if interval == "" {
-		interval = "5m"
-	}
-
-	var points []map[string]any
-	end := time.Now().UTC()
-	start := end.Add(-12 * time.Hour)
-	t := start
-	for !t.After(end) {
-		min := t.Minute()
-		points = append(points, map[string]any{
-			"t":             t.Format("2006-01-02T15:04:05.000Z"),
-			"boiler_temp":   70.0 + float64(min%10)*0.4,
-			"buffer_top":    66.0 + float64(min%8)*0.3,
-			"buffer_bottom": 44.0 + float64(min%6)*0.25,
-			"return_temp":   50.0 + float64(min%12)*0.2,
-			"feed_rate":     30 + (min%5)*3,
-		})
-		t = t.Add(5 * time.Minute)
-	}
-	jsonResponse(w, map[string]any{"series": points, "interval": interval})
-}
-
 // ---------- Main ----------
 // ---------- Hühnerklappe ----------
 const nanoSetPrefix = "nano/esp32"
@@ -323,8 +282,8 @@ func main() {
 	mux.HandleFunc("/api/mqtt/status", mqttStatus)
 
 	// Heating
-	mux.HandleFunc("/api/heating/summary", heatingSummary)
-	mux.HandleFunc("/api/heating/history", heatingHistory)
+	mux.HandleFunc("/api/heating/summary", restpkg.HeatingSummary)
+	mux.HandleFunc("/api/heating/history", restpkg.HeatingHistory)
 
 	addr := ":8083"
 	log.Printf("🚀 API server starting on %s", addr)
