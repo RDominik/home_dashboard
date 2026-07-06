@@ -20,8 +20,6 @@ export default function App() {
         </h2>
         <nav style={{ display: 'grid', gap: 6 }}>
           <NavLink to="/" style={linkStyle} end>Übersicht</NavLink>
-          <NavLink to="/wallbox" style={linkStyle}>Wallbox</NavLink>
-          <NavLink to="/inverter" style={linkStyle}>Wechselrichter</NavLink>
           <NavLink to="/energy" style={linkStyle}>PV Energiefluss</NavLink>
           <NavLink to="/goE" style={linkStyle}>goE</NavLink>
           <NavLink to="/huehnerklappe" style={linkStyle}>Motor</NavLink>
