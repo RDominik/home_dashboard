@@ -166,54 +166,50 @@ func (mqtt_manager *Manager) Publish(topic string, value any) error {
 func (mqtt_manager *Manager) Run() {
 	mqtt_manager.running = true
 	reconnectInterval := 5 * time.Second
-
-	for mqtt_manager.running {
-		broker := fmt.Sprintf("tcp://%s:%d", mqtt_manager.Broker, mqtt_manager.Port)
-		opts := pahomqtt.NewClientOptions().
-			AddBroker(broker).
-			SetClientID(fmt.Sprintf("webgui-api-%d", time.Now().UnixMilli())).
-			SetAutoReconnect(true).
-			SetConnectionLostHandler(func(client pahomqtt.Client, err error) {
-				log.Printf("⚠️  MQTT connection lost: %v", err)
-			}).
-			SetOnConnectHandler(func(client pahomqtt.Client) {
-				log.Printf("✅ Connected to MQTT broker %s", broker)
-				// Subscribe on (re)connect
-				for _, topic := range mqtt_manager.Topics {
-					token := client.Subscribe(topic, 0, mqtt_manager.handleMessage)
-					token.Wait()
-					if token.Error() != nil {
-						log.Printf("  ❌ Subscribe failed %s: %v", topic, token.Error())
-					} else {
-						log.Printf("  📥 Subscribed to %s", topic)
-					}
+	broker := fmt.Sprintf("tcp://%s:%d", mqtt_manager.Broker, mqtt_manager.Port)
+	opts := pahomqtt.NewClientOptions().
+		AddBroker(broker).
+		SetClientID(fmt.Sprintf("webgui-api-%d", time.Now().UnixMilli())).
+		SetAutoReconnect(true).
+		SetConnectRetry(true).
+		SetConnectRetryInterval(reconnectInterval).
+		SetConnectionLostHandler(func(client pahomqtt.Client, err error) {
+			log.Printf("⚠️  MQTT connection lost: %v", err)
+		}).
+		SetOnConnectHandler(func(client pahomqtt.Client) {
+			log.Printf("✅ Connected to MQTT broker %s", broker)
+			// Subscribe on every (re)connect so subscriptions are restored after reconnect.
+			for _, topic := range mqtt_manager.Topics {
+				token := client.Subscribe(topic, 0, mqtt_manager.handleMessage)
+				token.Wait()
+				if token.Error() != nil {
+					log.Printf("  ❌ Subscribe failed %s: %v", topic, token.Error())
+				} else {
+					log.Printf("  📥 Subscribed to %s", topic)
 				}
-			})
+			}
+		})
+
+	mqtt_manager.client = pahomqtt.NewClient(opts)
+	for mqtt_manager.running {
 		log.Printf("🔌 Connecting to MQTT broker at %s…", broker)
-		mqtt_manager.client = pahomqtt.NewClient(opts)
 		token := mqtt_manager.client.Connect()
 		token.Wait()
-		if token.Error() != nil {
-			log.Printf("❌ MQTT connect error: %v, retrying in %s", token.Error(), reconnectInterval)
-			mqtt_manager.client = nil
-			time.Sleep(reconnectInterval)
-			continue
+		if token.Error() == nil {
+			break
 		}
+		log.Printf("❌ MQTT connect error: %v, retrying in %s", token.Error(), reconnectInterval)
+		time.Sleep(reconnectInterval)
+	}
 
-		// Block until stopped
-		for mqtt_manager.running && mqtt_manager.client.IsConnected() {
-			time.Sleep(1 * time.Second)
-		}
+	// Keep the manager alive; reconnects are handled by Paho AutoReconnect.
+	for mqtt_manager.running {
+		time.Sleep(1 * time.Second)
+	}
 
-		if mqtt_manager.client != nil {
-			mqtt_manager.client.Disconnect(250)
-			mqtt_manager.client = nil
-		}
-
-		if mqtt_manager.running {
-			log.Printf("⚠️  Reconnecting in %s…", reconnectInterval)
-			time.Sleep(reconnectInterval)
-		}
+	if mqtt_manager.client != nil {
+		mqtt_manager.client.Disconnect(250)
+		mqtt_manager.client = nil
 	}
 
 	log.Println("🛑 MQTT manager stopped")
