@@ -4,3 +4,5 @@ webui/dist/
 previewConfig.json
 api/venv/*
 api/*
+api-go/rest-service
+api-go/webgui-api
