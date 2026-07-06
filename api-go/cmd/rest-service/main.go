@@ -38,23 +38,6 @@ func main() {
 		time.Sleep(200 * time.Millisecond)
 	}
 
-	restClient, err := restpkg.NewRest(restConfigPath)
-	if err != nil {
-		log.Fatalf("❌ REST config error: %v", err)
-	}
-	menu, err := restpkg.FetchETAMenu(restClient.MenuURL())
-	if err != nil {
-		log.Fatalf("❌ FetchETAMenu error: %v", err)
-	}
-	menuJSON, err := json.MarshalIndent(menu, "", "  ")
-	if err != nil {
-		log.Fatalf("❌ menu marshal error: %v", err)
-	}
-	if err := os.WriteFile("eta_menu.json", menuJSON, 0644); err != nil {
-		log.Fatalf("❌ write eta_menu.json: %v", err)
-	}
-	log.Println("📄 ETA menu written to eta_menu.json")
-
 	payload, err := restpkg.PublishVariableSetOnce(restConfigPath, mqttManager, topic)
 	if err != nil {
 		log.Fatalf("❌ REST publish error: %v", err)
@@ -71,4 +54,13 @@ func main() {
 	log.Println("📄 Variable set payload written to varset_payload.json")
 
 	log.Println("📡 REST variable set published once")
+
+	treeJSON, err := json.MarshalIndent(restpkg.GetEtaTree(), "", "  ")
+	if err != nil {
+		log.Fatalf("❌ etaTree marshal error: %v", err)
+	}
+	if err := os.WriteFile("eta_tree.json", treeJSON, 0644); err != nil {
+		log.Fatalf("❌ write eta_tree.json: %v", err)
+	}
+	log.Println("📄 ETA tree written to eta_tree.json")
 }
