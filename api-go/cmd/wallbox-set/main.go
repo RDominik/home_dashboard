@@ -1,12 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
-
-	"webgui-api/rest"
 )
 
 func parseValue(s string) any {
@@ -35,9 +36,36 @@ func main() {
 	}
 
 	payload := map[string]any{"key": key, "value": parseValue(value)}
-	var resp map[string]any
-	if err := rest.PostJSON(url, payload, &resp); err != nil {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "failed to encode payload:", err)
+		os.Exit(1)
+	}
+
+	httpResp, err := http.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "request failed:", err)
+		os.Exit(1)
+	}
+	defer httpResp.Body.Close()
+
+	respBody, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "failed to read response:", err)
+		os.Exit(1)
+	}
+
+	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
+		fmt.Fprintln(os.Stderr, "request failed:", httpResp.Status)
+		if len(respBody) > 0 {
+			fmt.Fprintln(os.Stderr, string(respBody))
+		}
+		os.Exit(1)
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		fmt.Fprintln(os.Stderr, "failed to decode response:", err)
 		os.Exit(1)
 	}
 	out, _ := json.MarshalIndent(resp, "", "  ")
