@@ -487,6 +487,21 @@ func BuildURITopicMap(menu *EtaMenu) map[string]string {
 	return result
 }
 
+// @brief Builds a mapping from hierarchical MQTT topic path to normalized URI.
+// @details
+// Unlike URI-based maps, this representation preserves the full visible menu
+// structure because each topic path is unique in the hierarchy, even when ETA
+// exposes the same URI in multiple branches.
+// @param[in] menu Parsed ETA menu tree.
+// @return Map where key is name-based topic path and value is normalized URI.
+func BuildTopicURIMap(menu *EtaMenu) map[string]string {
+	result := make(map[string]string)
+	for _, obj := range menu.Menu.Fub.Objects {
+		collectTopicURIs(obj, "", result)
+	}
+	return result
+}
+
 // @brief Recursively fills the URI-to-name lookup map for menu objects.
 // @details
 // Each object contributes one normalized URI -> display-name entry when both
@@ -528,6 +543,34 @@ func collectURITopics(obj Object, parentTopic string, m map[string]string) {
 
 	for _, child := range obj.Objects {
 		collectURITopics(child, topicPath, m)
+	}
+}
+
+// @brief Recursively fills topic->URI mapping without collapsing duplicate URIs.
+// @details
+// Each traversed menu node contributes its own hierarchical topic path and URI.
+// This keeps MQTT menu topics aligned with the visible ETA tree.
+// @param[in] obj Current menu object node.
+// @param[in] parentTopic Topic path built from ancestor objects.
+// @param[in,out] m Destination map for hierarchical topic path to normalized URI.
+func collectTopicURIs(obj Object, parentTopic string, m map[string]string) {
+	segment := sanitizeTopicSegment(obj.Name)
+	topicPath := parentTopic
+	if segment != "" {
+		if topicPath == "" {
+			topicPath = segment
+		} else {
+			topicPath += "/" + segment
+		}
+	}
+
+	uri := normalizeTopicURI(obj.URI)
+	if uri != "" && topicPath != "" {
+		m[topicPath] = uri
+	}
+
+	for _, child := range obj.Objects {
+		collectTopicURIs(child, topicPath, m)
 	}
 }
 
@@ -681,10 +724,10 @@ func LoadOrFetchETAMenu(url string) (EtaMenu, error) {
 // @param[in] menu Parsed ETA menu used to generate topic paths.
 // @param[in] mqttManager Active MQTT manager used for publish calls.
 func publishMenuTopics(menu *EtaMenu, mqttManager *mqtt.Manager) {
-	uriTopicMap := BuildURITopicMap(menu)
-	topics := make([]string, 0, len(uriTopicMap))
-	values := newTopicValueStore(len(uriTopicMap))
-	for uri, topicPath := range uriTopicMap {
+	topicURIMap := BuildTopicURIMap(menu)
+	topics := make([]string, 0, len(topicURIMap))
+	values := newTopicValueStore(len(topicURIMap))
+	for topicPath, uri := range topicURIMap {
 		topic := "eta/menu/" + topicPath
 		topics = append(topics, topic)
 		values.set(topic, uri)
