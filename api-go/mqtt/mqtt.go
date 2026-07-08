@@ -13,6 +13,14 @@ import (
 	pahomqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
+const (
+	publishWaitTimeout   = 3 * time.Second
+	publishRetryCount    = 2
+	publishRetryDelay    = 250 * time.Millisecond
+	publishConnectWait   = 5 * time.Second
+	connectionPollPeriod = 100 * time.Millisecond
+)
+
 // / @brief Verwaltet MQTT-Verbindung, Subscriptions und das Empfangen von Nachrichten.
 // /
 // / Der Manager stellt eine threadsichere Map aller empfangenen Topics bereit
@@ -140,18 +148,57 @@ func (mqtt_manager *Manager) IsConnected() bool {
 // / @param value  Der zu sendende Wert (wird JSON-kodiert).
 // / @return Fehler oder nil bei Erfolg.
 func (mqtt_manager *Manager) Publish(topic string, value any) error {
-	if mqtt_manager.client == nil || !mqtt_manager.client.IsConnected() {
-		return fmt.Errorf("MQTT client is not connected")
+	if mqtt_manager.client == nil {
+		return fmt.Errorf("MQTT client is not initialized")
 	}
-	// change value to JSON, mqtt can not handel go objects, pack to send
-	payload, _ := json.Marshal(value)
-	token := mqtt_manager.client.Publish(topic, 0, false, string(payload))
-	token.Wait()
-	if token.Error() != nil {
-		return token.Error()
+
+	// Change value to JSON, MQTT cannot handle Go objects directly.
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("mqtt marshal failed for topic %s: %w", topic, err)
 	}
-	log.Printf("📤 Published to %s", topic)
-	return nil
+
+	var lastErr error
+	for attempt := 1; attempt <= publishRetryCount; attempt++ {
+		if !mqtt_manager.waitForConnection(publishConnectWait) {
+			lastErr = fmt.Errorf("MQTT client is not connected")
+		} else {
+			token := mqtt_manager.client.Publish(topic, 0, false, payload)
+			if !token.WaitTimeout(publishWaitTimeout) {
+				lastErr = fmt.Errorf("mqtt publish timeout after %s", publishWaitTimeout)
+			} else {
+				lastErr = token.Error()
+			}
+		}
+
+		if lastErr == nil {
+			log.Printf("📤 Published to %s", topic)
+			return nil
+		}
+
+		if attempt < publishRetryCount {
+			log.Printf("[MQTT] publish attempt %d/%d failed for %s: %v", attempt, publishRetryCount, topic, lastErr)
+			time.Sleep(publishRetryDelay)
+		}
+	}
+
+	return fmt.Errorf("mqtt publish failed for topic %s: %w", topic, lastErr)
+}
+
+func (mqtt_manager *Manager) waitForConnection(timeout time.Duration) bool {
+	if mqtt_manager == nil || mqtt_manager.client == nil {
+		return false
+	}
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if mqtt_manager.client.IsConnected() {
+			return true
+		}
+		time.Sleep(connectionPollPeriod)
+	}
+
+	return mqtt_manager.client.IsConnected()
 }
 
 // / @brief Verbindet sich mit dem MQTT-Broker, abonniert alle konfigurierten Topics

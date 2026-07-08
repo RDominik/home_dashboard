@@ -711,11 +711,12 @@ func publishMenuTopics(menu *EtaMenu, mqttManager *mqtt.Manager) {
 		if err := mqttManager.Publish(topic, value); err != nil {
 			log.Printf("[REST] menu publish failed for topic %s: %v", topic, err)
 			if !waitForMQTTConnection(mqttManager, mqttReconnectTimeout) {
-				return
+				log.Printf("[REST] menu publish skipped for topic %s: mqtt reconnect timeout", topic)
+				continue
 			}
 			if retryErr := mqttManager.Publish(topic, value); retryErr != nil {
 				log.Printf("[REST] menu publish retry failed for topic %s: %v", topic, retryErr)
-				return
+				continue
 			}
 		}
 		publishedValues.set(topic, value)
