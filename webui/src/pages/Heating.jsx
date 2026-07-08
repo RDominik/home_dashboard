@@ -200,14 +200,22 @@ function KesselSubpage({ d }) {
 }
 
 function PufferSubpage({ d }) {
+  const topValue = `${fmt(d?.buffer_top)} C`
+  const bottomValue = `${fmt(d?.buffer_bottom)} C`
+  const spread =
+    typeof d?.buffer_top === 'number' && typeof d?.buffer_bottom === 'number'
+      ? `${fmt(d.buffer_top - d.buffer_bottom)} C`
+      : '-- C'
+
   return (
     <div className="eta-view eta-grid-puffer">
-      <div className="eta-machine-block">
-        <div className="eta-machine-art eta-buffer" />
-      </div>
-      <div className="eta-metrics-col">
-        <MetricPill label="Oben" value={fmt(d?.buffer_top)} unit="C" />
-        <MetricPill label="Unten" value={fmt(d?.buffer_bottom)} unit="C" />
+      <div className="eta-machine-block eta-puffer-block">
+        <div className="eta-puffer-canvas">
+          <img className="eta-puffer-image" src="/Puffer.png" alt="Puffer" />
+          <div className="eta-puffer-label eta-puffer-label-top">{topValue}</div>
+          <div className="eta-puffer-label eta-puffer-label-bottom">{bottomValue}</div>
+          <div className="eta-puffer-label eta-puffer-label-side">Delta {spread}</div>
+        </div>
       </div>
     </div>
   )

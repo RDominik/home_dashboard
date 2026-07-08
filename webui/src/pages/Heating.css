@@ -114,6 +114,10 @@
   grid-template-columns: 1fr 220px;
 }
 
+.eta-grid-puffer {
+  grid-template-columns: 1fr;
+}
+
 .eta-machine-block {
   display: grid;
   place-items: center;
@@ -229,6 +233,60 @@
     linear-gradient(180deg, #ff3f26 0%, #d32414 50%, #3d5fff 100%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.28), transparent 30%);
   border-radius: 120px;
+}
+
+.eta-puffer-block {
+  align-items: center;
+}
+
+.eta-puffer-canvas {
+  position: relative;
+  width: min(100%, 560px);
+  margin-inline: auto;
+}
+
+.eta-puffer-image {
+  display: block;
+  width: min(100%, 320px);
+  height: auto;
+  margin: 24px auto 0;
+  border-radius: 16px;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.45);
+}
+
+.eta-puffer-label {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  color: #f6f8fc;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+}
+
+.eta-puffer-label-top {
+  left: 32.5%;
+  top: 17.8%;
+  width: 20.5%;
+  height: 8.2%;
+  font-size: clamp(0.92rem, 2vw, 1.25rem);
+}
+
+.eta-puffer-label-bottom {
+  left: 32.5%;
+  top: 67.3%;
+  width: 20.5%;
+  height: 12.2%;
+  font-size: clamp(0.92rem, 2vw, 1.3rem);
+}
+
+.eta-puffer-label-side {
+  left: 65.5%;
+  top: 24.5%;
+  width: 22.5%;
+  height: 12.4%;
+  font-size: clamp(0.78rem, 1.7vw, 1.08rem);
 }
 
 .eta-filter {
@@ -389,6 +447,10 @@
   .eta-grid-efilter,
   .eta-grid-sys {
     grid-template-columns: 1fr;
+  }
+
+  .eta-puffer-canvas {
+    width: min(100%, 560px);
   }
 
   .eta-status-box {
