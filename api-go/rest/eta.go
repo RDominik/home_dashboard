@@ -1112,7 +1112,6 @@ func PublishVariableSetOnce(restConfigPath string, mqttManager *mqtt.Manager, to
 	} else {
 		uriNameMap := BuildURINameMap(&menu)
 		uriTopicMap = BuildURITopicMap(&menu)
-		publishMenuTopics(&menu, mqttManager)
 		for i := range payload.Variable.Objects {
 			normalizedURI := normalizeTopicURI(payload.Variable.Objects[i].URI)
 			if name, ok := uriNameMap[normalizedURI]; ok {
