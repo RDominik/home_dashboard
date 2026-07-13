@@ -1,20 +1,20 @@
-import React, { useState, useEffect } from 'react'
+import React, { useMemo, useState } from 'react'
 
-const API = '/api/wallbox'
+function defaultSystemUpdateBaseUrl() {
+  const protocol = window.location.protocol
+  const host = window.location.hostname
+  return `${protocol}//${host}:8090`
+}
 
 export default function UpdatePage() {
-  const [status, setStatus] = useState(null)
-  const [sending, setSending] = useState(false)
-  const [feedback, setFeedback] = useState(null)
   const [updating, setUpdating] = useState(false)
   const [updateLog, setUpdateLog] = useState(null)
 
-
-
-
-
-  const frcLabels = { 0: 'Neutral', 1: 'Aus (Idle)', 2: 'Laden erzwingen' }
-  const carLabels = { 1: 'Kein Fahrzeug', 2: 'Laden', 3: 'Warten', 4: 'Fertig' }
+  const updateUrl = useMemo(() => {
+    const configuredBase = import.meta.env.VITE_SYSTEM_UPDATE_BASE_URL
+    const base = configuredBase && configuredBase.trim() !== '' ? configuredBase.trim() : defaultSystemUpdateBaseUrl()
+    return `${base.replace(/\/$/, '')}/api/system/update`
+  }, [])
 
   const cardStyle = {
     background: '#fff',
@@ -31,8 +31,8 @@ export default function UpdatePage() {
     color: '#fff',
     fontWeight: 600,
     fontSize: 14,
-    cursor: sending ? 'wait' : 'pointer',
-    opacity: sending ? 0.6 : 1,
+    cursor: updating ? 'wait' : 'pointer',
+    opacity: updating ? 0.6 : 1,
     transition: 'opacity 0.2s',
   })
 
@@ -40,33 +40,17 @@ export default function UpdatePage() {
     <div style={{ maxWidth: 700, margin: '0 auto' }}>
       <h1 style={{ marginBottom: 5 }}>Update App</h1>
       <p style={{ color: '#6b7280', marginTop: 0, marginBottom: 24 }}>
-        
+        Nutzt den externen Host-Service auf Port 8090.
       </p>
 
-      {/* Feedback */}
-      {feedback && (
-        <div style={{
-          padding: '10px 16px',
-          borderRadius: 8,
-          marginBottom: 500,
-          background: feedback.type === 'success' ? '#d1fae5' : '#e3e2fe',
-          color: feedback.type === 'success' ? '#065f46' : '#991b1b',
-          fontWeight: 500,
-        }}>
-          {feedback.msg}
-        </div>
-      )}
-
-
-
-
-
-
       {/* System Update */}
-      <div style={{ ...cardStyle, marginTop: 650, borderLeft: '4px solid #f59e0b' }}>
+      <div style={{ ...cardStyle, borderLeft: '4px solid #f59e0b' }}>
         <h3 style={{ marginTop: 0, color: '#374151' }}>🚀 System Update</h3>
         <p style={{ color: '#6b7280', fontSize: 14, margin: '0 0 12px' }}>
           Git Pull + Docker Container neu bauen und starten
+        </p>
+        <p style={{ color: '#6b7280', fontSize: 12, margin: '0 0 12px' }}>
+          Endpoint: {updateUrl}
         </p>
         <button
           style={btnStyle(updating ? '#9ca3af' : '#f59e0b')}
@@ -75,11 +59,12 @@ export default function UpdatePage() {
             setUpdating(true)
             setUpdateLog(null)
             try {
-              const r = await fetch('/api/system/update', { method: 'POST' })
+              const r = await fetch(updateUrl, { method: 'POST' })
               const data = await r.json()
               setUpdateLog(data)
             } catch (err) {
-              setUpdateLog({ ok: false, results: [{ step: 'fetch', ok: false, stderr: err.message }] })
+              const msg = err instanceof Error ? err.message : String(err)
+              setUpdateLog({ ok: false, results: [{ step: 'fetch', ok: false, stderr: msg }] })
             } finally {
               setUpdating(false)
             }
@@ -110,20 +95,6 @@ export default function UpdatePage() {
           </div>
         )}
       </div>
-    </div>
-  )
-}
-
-function StatusItem({ label, value }) {
-  return (
-    <div style={{
-      background: '#112233',
-      borderRadius: 8,
-      padding: '10px 14px',
-      textAlign: 'center',
-    }}>
-      <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 18, fontWeight: 700, color: '#111827' }}>{value}</div>
     </div>
   )
 }
