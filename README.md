@@ -31,6 +31,17 @@ docker run --rm -p 8081:8081 eta-api
 # Test: http://localhost:8081/api/inverter/summary
 ```
 
+Host-System-Update-Service
+
+Wenn `git pull` und `docker compose up --build -d` bewusst außerhalb der Container laufen sollen, gibt es jetzt einen separaten Dienst in `systemUpdate/`.
+
+```bash
+cd /home/dominik/Repository/webgui/systemUpdate
+go run . --repo-dir /home/dominik/Repository/webgui --addr :8090
+```
+
+Danach steht `POST /api/system/update` zur Verfügung.
+
 ## MQTT-Anbindung (API → WebUI)
 
 Die API kann Live‑Werte (PV/Haushalt/SoC) per MQTT abonnieren und als REST an die WebUI liefern.
