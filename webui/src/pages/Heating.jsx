@@ -9,6 +9,17 @@ const TABS = [
   { key: 'sys', label: 'Sys' },
 ]
 
+const DEFAULT_METRICS = {
+  boiler_temp: 0,
+  boiler_pressure: 0,
+  buffer_top: 0,
+  buffer_bottom: 0,
+  return_temp: 0,
+  outside_temp: 0,
+  feed_rate: 0,
+  burner_status: 'Standby',
+}
+
 export default function Heating() {
   const [d, setD] = useState(null)
   const [activeTab, setActiveTab] = useState('kessel')
@@ -86,41 +97,49 @@ export default function Heating() {
 }
 
 function mapEtaTreeToMetrics(tree) {
-  if (!tree) return null
+  if (!tree) return DEFAULT_METRICS
 
   return {
     boiler_temp: pickNumber(
       tree?.eta?.Eingänge?.Kessel?.StrValue,
       tree?.eta?.Kessel?.Kessel?.Kessel_Soll?.Angeforderte_Temperatur?.StrValue,
       tree?.eta?.Kessel?.Rücklaufanhebung?.Rücklauf?.Rücklaufmischer?.Ist_Temperatur?.StrValue,
+      DEFAULT_METRICS.boiler_temp,
     ),
     boiler_pressure: pickNumber(
       tree?.eta?.Eingänge?.Kesseldruck?.Kesseldruck?.StrValue,
       tree?.eta?.Kessel?.Kesseldruck?.StrValue,
+      DEFAULT_METRICS.boiler_pressure,
     ),
     buffer_top: pickNumber(
       tree?.eta?.Eingänge?.Puffer_oben?.StrValue,
       tree?.eta?.Puffer?.Puffer_oben?.StrValue,
+      DEFAULT_METRICS.buffer_top,
     ),
     buffer_bottom: pickNumber(
       tree?.eta?.Eingänge?.Puffer_unten?.StrValue,
       tree?.eta?.Puffer?.Puffer_unten?.StrValue,
+      DEFAULT_METRICS.buffer_bottom,
     ),
     return_temp: pickNumber(
       tree?.eta?.Kessel?.Rücklaufanhebung?.Rücklauf?.Rücklaufmischer?.Ist_Temperatur?.StrValue,
       tree?.eta?.Eingänge?.Rücklauf?.StrValue,
+      DEFAULT_METRICS.return_temp,
     ),
     outside_temp: pickNumber(
       tree?.eta?.Eingänge?.Außentemperatur?.StrValue,
       tree?.eta?.Außentemperatur?.StrValue,
+      DEFAULT_METRICS.outside_temp,
     ),
     feed_rate: pickNumber(
       tree?.eta?.Austragung?.Stoker_Einheit?.Taktrate?.StrValue,
       tree?.eta?.Ausgänge?.Austragung?.Taktrate?.StrValue,
+      DEFAULT_METRICS.feed_rate,
     ),
     burner_status: pickString(
       tree?.eta?.Kessel?.StrValue,
       tree?.eta?.Kessel?.Entaschung?.Rost_Zustand?.Rost?.Zustand?.StrValue,
+      DEFAULT_METRICS.burner_status,
     ),
   }
 }
@@ -214,8 +233,13 @@ function PufferSubpage({ d }) {
           <img className="eta-puffer-image" src="/Puffer.png" alt="Puffer" />
           <div className="eta-puffer-label eta-puffer-label-top">{topValue}</div>
           <div className="eta-puffer-label eta-puffer-label-bottom">{bottomValue}</div>
-          <div className="eta-puffer-label eta-puffer-label-side">Delta {spread}</div>
+          <div className="eta-puffer-label eta-puffer-label-side">{spread}</div>
         </div>
+      </div>
+      <div className="eta-metrics-col">
+        <MetricPill label="Puffer oben" value={fmt(d?.buffer_top)} unit="C" />
+        <MetricPill label="Puffer unten" value={fmt(d?.buffer_bottom)} unit="C" />
+        <MetricPill label="Delta" value={spread} />
       </div>
     </div>
   )
