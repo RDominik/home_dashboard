@@ -107,7 +107,6 @@ function mapEtaTreeToMetrics(tree) {
   )
 
   const returnTemp = pickNumber(
-    tree?.eta?.Kessel?.Rücklaufanhebung?.Rücklauf?.Rücklaufmischer?.Ist_Temperatur?.StrValue,
     tree?.eta?.Eingänge?.Rücklauf?.StrValue,
     DEFAULT_METRICS.return_temp,
   )
