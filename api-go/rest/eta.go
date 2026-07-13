@@ -1300,3 +1300,73 @@ func FetchURLResponse(url string, payload any, dest any) error {
 	}
 	return nil
 }
+
+// @brief Loads REST configuration and deletes the configured variable set on the ETA device.
+// @details
+// The function builds a validated REST client from the given config path and
+// issues a DELETE request against the configured variable set URL.
+// It is the complement to BuildVarSetFromConfig and is typically called before
+// rebuilding a fresh variable set.
+// @param[in] configPath Path to the JSON configuration file.
+// @return Error if loading configuration or deleting the variable set fails.
+func DeleteVarSetFromConfig(configPath string) error {
+	client, err := NewRest(configPath)
+	if err != nil {
+		return err
+	}
+
+	return DeleteVarSet(client.varsetURL())
+}
+
+// @brief Deletes the complete ETA variable set object.
+// @details
+// This helper issues a DELETE request against the varset endpoint itself
+// (/user/vars/<name>) and removes the full variable set on the device.
+// @param[in] varSetURL Base URL to the target variable set (/user/vars/<name>).
+// @return Error if input is invalid, request fails, or server returns non-2xx status.
+func DeleteVarSet(varSetURL string) error {
+	if strings.TrimSpace(varSetURL) == "" {
+		return fmt.Errorf("varSetURL must not be empty")
+	}
+
+	return deleteVarSetTarget(varSetURL)
+}
+
+// @brief Sends DELETE request to a fully resolved variable-set target URL.
+// @details
+// Non-success HTTP responses are returned with a shortened
+// response snippet to simplify diagnostics in logs and caller errors.
+// @param[in] targetURL Fully resolved DELETE endpoint.
+// @return Error if request creation, transport, or response status validation fails.
+func deleteVarSetTarget(targetURL string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, targetURL, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Accept", "application/xml, application/json, text/xml, */*")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		snippet := string(body)
+		if len(snippet) > 200 {
+			snippet = snippet[:200]
+		}
+		return fmt.Errorf("delete varset target failed (status %d): %s", resp.StatusCode, snippet)
+	}
+
+	log.Printf("variable set target deleted: %s", targetURL)
+	return nil
+}
