@@ -3,12 +3,6 @@ import React, { useMemo, useState } from 'react'
 function defaultSystemUpdateBaseUrl() {
   const protocol = window.location.protocol
   const host = window.location.hostname
-  const lanFallbackHost = '192.168.188.97'
-
-  if (host === 'dashboard.home') {
-    return `${protocol}//${lanFallbackHost}:8090`
-  }
-
   return `${protocol}//${host}:8090`
 }
 
