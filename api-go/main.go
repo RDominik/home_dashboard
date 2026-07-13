@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -69,83 +68,6 @@ func inverterSummary(writer http.ResponseWriter, r *http.Request) {
 		"pbattery":          status["pbattery"],
 		"car_power":         carPower,
 	})
-}
-
-// ---------- System Update ----------
-
-type stepResult struct {
-	Step   string `json:"step"`
-	OK     bool   `json:"ok"`
-	Stdout string `json:"stdout,omitempty"`
-	Stderr string `json:"stderr,omitempty"`
-}
-
-func systemUpdate(w http.ResponseWriter, r *http.Request) {
-	repoDir := "/repo"
-	var results []stepResult
-
-	// 1. git pull
-	gitCmd := exec.Command("git", "pull")
-	gitCmd.Dir = repoDir
-	gitOut, gitErr := gitCmd.Output()
-	gitStderr := ""
-	if gitErr != nil {
-		if exitErr, ok := gitErr.(*exec.ExitError); ok {
-			gitStderr = string(exitErr.Stderr)
-		} else {
-			gitStderr = gitErr.Error()
-		}
-	}
-	gitOK := gitErr == nil
-	results = append(results, stepResult{
-		Step:   "git pull",
-		OK:     gitOK,
-		Stdout: strings.TrimSpace(string(gitOut)),
-		Stderr: strings.TrimSpace(gitStderr),
-	})
-	if !gitOK {
-		jsonResponse(w, map[string]any{"ok": false, "results": results})
-		return
-	}
-
-	// 2. docker compose build + up
-	buildCmd := exec.Command("docker", "compose", "-f", "docker-compose.webui.yml", "up", "--build", "-d")
-	buildCmd.Dir = repoDir
-	buildOut, buildErr := buildCmd.Output()
-	buildStderr := ""
-	if buildErr != nil {
-		if exitErr, ok := buildErr.(*exec.ExitError); ok {
-			buildStderr = string(exitErr.Stderr)
-		} else {
-			buildStderr = buildErr.Error()
-		}
-	}
-	buildOK := buildErr == nil
-
-	// Ausgabe auf 500 Zeichen begrenzen
-	stdout := string(buildOut)
-	if len(stdout) > 500 {
-		stdout = stdout[len(stdout)-500:]
-	}
-	stderr := buildStderr
-	if len(stderr) > 500 {
-		stderr = stderr[len(stderr)-500:]
-	}
-
-	results = append(results, stepResult{
-		Step:   "docker compose up --build -d",
-		OK:     buildOK,
-		Stdout: strings.TrimSpace(stdout),
-		Stderr: strings.TrimSpace(stderr),
-	})
-
-	allOK := true
-	for _, r := range results {
-		if !r.OK {
-			allOK = false
-		}
-	}
-	jsonResponse(w, map[string]any{"ok": allOK, "results": results})
 }
 
 // Debug: MQTT status + received messages
@@ -274,9 +196,6 @@ func main() {
 
 	// Inverter
 	mux.HandleFunc("/api/inverter/summary", inverterSummary)
-
-	// System
-	mux.HandleFunc("/api/system/update", systemUpdate)
 
 	// MQTT debug
 	mux.HandleFunc("/api/mqtt/status", mqttStatus)
