@@ -42,6 +42,22 @@ go run . --repo-dir /home/dominik/Repository/webgui --addr :8090
 
 Danach steht `POST /api/system/update` zur Verfügung.
 
+Autostart mit systemd (User-Service, ohne root):
+
+```bash
+cd /home/dominik/Repository/webgui
+chmod +x systemUpdate/systemd/install-user-service.sh
+./systemUpdate/systemd/install-user-service.sh
+```
+
+Service prüfen:
+
+```bash
+systemctl --user status webgui-systemupdate.service
+journalctl --user -u webgui-systemupdate.service -f
+curl -fsS http://localhost:8090/healthz
+```
+
 ## MQTT-Anbindung (API → WebUI)
 
 Die API kann Live‑Werte (PV/Haushalt/SoC) per MQTT abonnieren und als REST an die WebUI liefern.
