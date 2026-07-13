@@ -1,0 +1,14 @@
+[Unit]
+Description=WebGUI System Update Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Repository/webgui
+ExecStart=%h/.local/bin/webgui-systemupdate --repo-dir %h/Repository/webgui --addr :8090
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

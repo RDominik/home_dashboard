@@ -64,7 +64,16 @@ export default function UpdatePage() {
               setUpdateLog(data)
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err)
-              setUpdateLog({ ok: false, results: [{ step: 'fetch', ok: false, stderr: msg }] })
+              setUpdateLog({
+                ok: false,
+                results: [{
+                  step: 'fetch',
+                  ok: false,
+                  stderr:
+                    `Service nicht erreichbar (${updateUrl}). ${msg}. ` +
+                    'Bitte starten: cd /home/dominik/Repository/webgui/systemUpdate && go run . --repo-dir /home/dominik/Repository/webgui --addr :8090',
+                }],
+              })
             } finally {
               setUpdating(false)
             }
