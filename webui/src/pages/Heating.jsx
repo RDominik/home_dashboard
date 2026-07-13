@@ -99,33 +99,45 @@ export default function Heating() {
 function mapEtaTreeToMetrics(tree) {
   if (!tree) return DEFAULT_METRICS
 
+  const boilerTemp = pickNumber(
+    tree?.eta?.Eingänge?.Kessel?.StrValue,
+    tree?.eta?.Kessel?.Kessel?.Kessel_Soll?.Angeforderte_Temperatur?.StrValue,
+    tree?.eta?.Kessel?.Rücklaufanhebung?.Rücklauf?.Rücklaufmischer?.Ist_Temperatur?.StrValue,
+    DEFAULT_METRICS.boiler_temp,
+  )
+
+  const returnTemp = pickNumber(
+    tree?.eta?.Kessel?.Rücklaufanhebung?.Rücklauf?.Rücklaufmischer?.Ist_Temperatur?.StrValue,
+    tree?.eta?.Eingänge?.Rücklauf?.StrValue,
+    DEFAULT_METRICS.return_temp,
+  )
+
+  const bufferTop = pickNumber(
+    tree?.eta?.Eingänge?.Puffer_oben?.StrValue,
+    tree?.eta?.Puffer?.Puffer_oben?.StrValue,
+    tree?.eta?.Puffer?.Kaskade?.Regler_Kaskade?.Istwert?.StrValue,
+    boilerTemp,
+    DEFAULT_METRICS.buffer_top,
+  )
+
+  const bufferBottom = pickNumber(
+    tree?.eta?.Eingänge?.Puffer_unten?.StrValue,
+    tree?.eta?.Puffer?.Puffer_unten?.StrValue,
+    tree?.eta?.Puffer?.Kaskade?.Regler_Kaskade?.Sollwert?.StrValue,
+    returnTemp,
+    DEFAULT_METRICS.buffer_bottom,
+  )
+
   return {
-    boiler_temp: pickNumber(
-      tree?.eta?.Eingänge?.Kessel?.StrValue,
-      tree?.eta?.Kessel?.Kessel?.Kessel_Soll?.Angeforderte_Temperatur?.StrValue,
-      tree?.eta?.Kessel?.Rücklaufanhebung?.Rücklauf?.Rücklaufmischer?.Ist_Temperatur?.StrValue,
-      DEFAULT_METRICS.boiler_temp,
-    ),
+    boiler_temp: boilerTemp,
     boiler_pressure: pickNumber(
       tree?.eta?.Eingänge?.Kesseldruck?.Kesseldruck?.StrValue,
       tree?.eta?.Kessel?.Kesseldruck?.StrValue,
       DEFAULT_METRICS.boiler_pressure,
     ),
-    buffer_top: pickNumber(
-      tree?.eta?.Eingänge?.Puffer_oben?.StrValue,
-      tree?.eta?.Puffer?.Puffer_oben?.StrValue,
-      DEFAULT_METRICS.buffer_top,
-    ),
-    buffer_bottom: pickNumber(
-      tree?.eta?.Eingänge?.Puffer_unten?.StrValue,
-      tree?.eta?.Puffer?.Puffer_unten?.StrValue,
-      DEFAULT_METRICS.buffer_bottom,
-    ),
-    return_temp: pickNumber(
-      tree?.eta?.Kessel?.Rücklaufanhebung?.Rücklauf?.Rücklaufmischer?.Ist_Temperatur?.StrValue,
-      tree?.eta?.Eingänge?.Rücklauf?.StrValue,
-      DEFAULT_METRICS.return_temp,
-    ),
+    buffer_top: bufferTop,
+    buffer_bottom: bufferBottom,
+    return_temp: returnTemp,
     outside_temp: pickNumber(
       tree?.eta?.Eingänge?.Außentemperatur?.StrValue,
       tree?.eta?.Außentemperatur?.StrValue,
