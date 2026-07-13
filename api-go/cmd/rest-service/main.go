@@ -38,6 +38,12 @@ func main() {
 		time.Sleep(200 * time.Millisecond)
 	}
 
+	if err := restpkg.DeleteVarSetFromConfig(restConfigPath); err != nil {
+		log.Printf("⚠️  varset delete skipped: %v", err)
+	} else {
+		log.Println("🗑️  varset deleted")
+	}
+
 	payload, err := restpkg.PublishVariableSetOnce(restConfigPath, mqttManager, topic)
 	if err != nil {
 		log.Fatalf("❌ REST publish error: %v", err)
