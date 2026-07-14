@@ -1,20 +1,35 @@
 import React, { useMemo, useState } from 'react'
 
-function defaultSystemUpdateBaseUrl() {
+function buildSystemUpdateUrls() {
   const protocol = window.location.protocol
   const host = window.location.hostname
-  return `${protocol}//${host}:8090`
+  const configuredBase = import.meta.env.VITE_SYSTEM_UPDATE_BASE_URL?.trim()
+  const candidates = [
+    configuredBase,
+    `${protocol}//${host}:8090`,
+    `${protocol}//localhost:8090`,
+    `${protocol}//127.0.0.1:8090`,
+    'http://localhost:8090',
+    'http://127.0.0.1:8090',
+  ].filter(Boolean)
+
+  const unique = []
+  for (const base of candidates) {
+    const normalized = String(base).replace(/\/$/, '')
+    if (!unique.includes(normalized)) {
+      unique.push(normalized)
+    }
+  }
+
+  return unique.map((base) => `${base}/api/system/update`)
 }
 
 export default function UpdatePage() {
   const [updating, setUpdating] = useState(false)
   const [updateLog, setUpdateLog] = useState(null)
 
-  const updateUrl = useMemo(() => {
-    const configuredBase = import.meta.env.VITE_SYSTEM_UPDATE_BASE_URL
-    const base = configuredBase && configuredBase.trim() !== '' ? configuredBase.trim() : defaultSystemUpdateBaseUrl()
-    return `${base.replace(/\/$/, '')}/api/system/update`
-  }, [])
+  const updateUrls = useMemo(() => buildSystemUpdateUrls(), [])
+  const updateUrl = updateUrls[0]
 
   const cardStyle = {
     background: '#fff',
@@ -58,10 +73,30 @@ export default function UpdatePage() {
           onClick={async () => {
             setUpdating(true)
             setUpdateLog(null)
+            let lastFetchError = null
             try {
-              const r = await fetch(updateUrl, { method: 'POST' })
-              const data = await r.json()
-              setUpdateLog(data)
+              for (const candidateUrl of updateUrls) {
+                try {
+                  const r = await fetch(candidateUrl, { method: 'POST' })
+                  const data = await r.json()
+                  setUpdateLog(data)
+                  return
+                } catch (err) {
+                  lastFetchError = err
+                }
+              }
+
+              const msg = lastFetchError instanceof Error ? lastFetchError.message : String(lastFetchError)
+              setUpdateLog({
+                ok: false,
+                results: [{
+                  step: 'fetch',
+                  ok: false,
+                  stderr:
+                    `Service nicht erreichbar. Versuchte URLs: ${updateUrls.join(', ')}. Letzter Fehler: ${msg}. ` +
+                    'Bitte starten: cd /home/dominik/Repository/webgui/systemUpdate && go run . --repo-dir /home/dominik/Repository/webgui --addr :8090',
+                }],
+              })
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err)
               setUpdateLog({
@@ -69,9 +104,7 @@ export default function UpdatePage() {
                 results: [{
                   step: 'fetch',
                   ok: false,
-                  stderr:
-                    `Service nicht erreichbar (${updateUrl}). ${msg}. ` +
-                    'Bitte starten: cd /home/dominik/Repository/webgui/systemUpdate && go run . --repo-dir /home/dominik/Repository/webgui --addr :8090',
+                  stderr: `Service nicht erreichbar (${updateUrl}). ${msg}.`,
                 }],
               })
             } finally {
