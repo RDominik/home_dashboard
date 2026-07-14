@@ -118,7 +118,14 @@ type nestedStore struct {
 	root map[string]any
 }
 
+type payloadStore struct {
+	mu      sync.RWMutex
+	payload Varset_Head
+	set     bool
+}
+
 var etaTree = &nestedStore{root: make(map[string]any)}
+var latestPayload = &payloadStore{}
 
 // publishedValues hält den zuletzt erfolgreich gepublishten Wert pro Topic.
 // Damit werden bei PublishVariableSetOnce und publishMenuTopics nur Topics
@@ -268,7 +275,27 @@ func (s *topicValueStore) snapshot(prefix string) map[string]string {
 // @param[in] r Incoming HTTP request (unused except for endpoint context).
 func HeatingSummary(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(etaTree.snapshot())
+	if payload, ok := getLatestPayload(); ok {
+		json.NewEncoder(w).Encode(payload)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]any{})
+}
+
+func setLatestPayload(payload Varset_Head) {
+	latestPayload.mu.Lock()
+	latestPayload.payload = payload
+	latestPayload.set = true
+	latestPayload.mu.Unlock()
+}
+
+func getLatestPayload() (Varset_Head, bool) {
+	latestPayload.mu.RLock()
+	defer latestPayload.mu.RUnlock()
+	if !latestPayload.set {
+		return Varset_Head{}, false
+	}
+	return latestPayload.payload, true
 }
 
 // @brief HTTP endpoint returning synthetic recent heating history points.
@@ -1124,6 +1151,8 @@ func PublishVariableSetOnce(restConfigPath string, mqttManager *mqtt.Manager, to
 			log.Printf("[REST] could not persist enriched ETA menu: %v", err)
 		}
 	}
+
+	setLatestPayload(payload)
 
 	// Publish each variable value to its own topic: "eta/<menu-path>/<field>"
 	// Nur Topics mit geändertem Wert werden tatsächlich an den Broker gesendet.

@@ -100,6 +100,7 @@ function mapEtaTreeToMetrics(tree) {
   if (!tree) return DEFAULT_METRICS
 
   const boilerTemp = pickNumber(
+    tree?.eta?.heating?.boiler_temp?.StrValue,
     tree?.eta?.Eingänge?.Kessel?.StrValue,
     tree?.eta?.Kessel?.Kessel?.Kessel_Soll?.Angeforderte_Temperatur?.StrValue,
     tree?.eta?.Kessel?.Rücklaufanhebung?.Rücklauf?.Rücklaufmischer?.Ist_Temperatur?.StrValue,
@@ -107,6 +108,8 @@ function mapEtaTreeToMetrics(tree) {
   )
 
   const returnTemp = pickNumber(
+    tree?.eta?.heating?.return_temp?.StrValue,
+    tree?.eta?.Kessel?.Rücklaufanhebung?.Rücklauf?.Rücklaufmischer?.Ist_Temperatur?.StrValue,
     tree?.eta?.Eingänge?.Rücklauf?.StrValue,
     DEFAULT_METRICS.return_temp,
   )
