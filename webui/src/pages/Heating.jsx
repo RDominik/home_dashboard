@@ -96,63 +96,50 @@ export default function Heating() {
   )
 }
 
+function pickByURI(objects, ...uris) {
+  if (!Array.isArray(objects)) return undefined
+  for (const uri of uris) {
+    const match = objects.find((o) => o.URI === uri)
+    if (match?.StrValue != null && match.StrValue !== '') return match.StrValue
+  }
+  return undefined
+}
+
 function mapEtaTreeToMetrics(tree) {
   if (!tree) return DEFAULT_METRICS
 
-  const boilerTemp = pickNumber(
-    tree?.eta?.heating?.boiler_temp?.StrValue,
-    tree?.eta?.Eingänge?.Kessel?.StrValue,
-    tree?.eta?.Kessel?.Kessel?.Kessel_Soll?.Angeforderte_Temperatur?.StrValue,
-    tree?.eta?.Kessel?.Rücklaufanhebung?.Rücklauf?.Rücklaufmischer?.Ist_Temperatur?.StrValue,
-    DEFAULT_METRICS.boiler_temp,
-  )
-
-  const returnTemp = pickNumber(
-    tree?.eta?.heating?.return_temp?.StrValue,
-    tree?.eta?.Kessel?.Rücklaufanhebung?.Rücklauf?.Rücklaufmischer?.Ist_Temperatur?.StrValue,
-    tree?.eta?.Eingänge?.Rücklauf?.StrValue,
-    DEFAULT_METRICS.return_temp,
-  )
-
-  const bufferTop = pickNumber(
-    tree?.eta?.Eingänge?.Puffer_oben?.StrValue,
-    tree?.eta?.Puffer?.Puffer_oben?.StrValue,
-    tree?.eta?.Puffer?.Kaskade?.Regler_Kaskade?.Istwert?.StrValue,
-    boilerTemp,
-    DEFAULT_METRICS.buffer_top,
-  )
-
-  const bufferBottom = pickNumber(
-    tree?.eta?.Eingänge?.Puffer_unten?.StrValue,
-    tree?.eta?.Puffer?.Puffer_unten?.StrValue,
-    tree?.eta?.Puffer?.Kaskade?.Regler_Kaskade?.Sollwert?.StrValue,
-    returnTemp,
-    DEFAULT_METRICS.buffer_bottom,
-  )
+  const objs = tree?.Variable?.Objects
 
   return {
-    boiler_temp: boilerTemp,
+    boiler_temp: pickNumber(
+      pickByURI(objs, '24/10561/0/0/12161', '24/10561/0/11109'),
+      DEFAULT_METRICS.boiler_temp,
+    ),
     boiler_pressure: pickNumber(
-      tree?.eta?.Eingänge?.Kesseldruck?.Kesseldruck?.StrValue,
-      tree?.eta?.Kessel?.Kesseldruck?.StrValue,
+      pickByURI(objs, '24/10561/0/0/12180'),
       DEFAULT_METRICS.boiler_pressure,
     ),
-    buffer_top: bufferTop,
-    buffer_bottom: bufferBottom,
-    return_temp: returnTemp,
+    buffer_top: pickNumber(
+      pickByURI(objs, '120/10251/0/0/12242', '120/10251/0/11153'),
+      DEFAULT_METRICS.buffer_top,
+    ),
+    buffer_bottom: pickNumber(
+      pickByURI(objs, '120/10251/0/0/12244', '120/10251/0/11155'),
+      DEFAULT_METRICS.buffer_bottom,
+    ),
+    return_temp: pickNumber(
+      pickByURI(objs, '24/10561/0/0/12220', '24/10561/0/11160'),
+      DEFAULT_METRICS.return_temp,
+    ),
     outside_temp: pickNumber(
-      tree?.eta?.Eingänge?.Außentemperatur?.StrValue,
-      tree?.eta?.Außentemperatur?.StrValue,
+      pickByURI(objs, '120/10101/0/0/12197', '120/10241/0/0/12197', '120/10241/0/11127'),
       DEFAULT_METRICS.outside_temp,
     ),
     feed_rate: pickNumber(
-      tree?.eta?.Austragung?.Stoker_Einheit?.Taktrate?.StrValue,
-      tree?.eta?.Ausgänge?.Austragung?.Taktrate?.StrValue,
       DEFAULT_METRICS.feed_rate,
     ),
     burner_status: pickString(
-      tree?.eta?.Kessel?.StrValue,
-      tree?.eta?.Kessel?.Entaschung?.Rost_Zustand?.Rost?.Zustand?.StrValue,
+      pickByURI(objs, '24/10561/0/0/12000'),
       DEFAULT_METRICS.burner_status,
     ),
   }
