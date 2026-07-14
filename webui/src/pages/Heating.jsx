@@ -14,6 +14,7 @@ const DEFAULT_METRICS = {
   boiler_pressure: 0,
   buffer_top: 0,
   buffer_bottom: 0,
+  warmwater_storage: 0,
   return_temp: 0,
   outside_temp: 0,
   feed_rate: 0,
@@ -126,6 +127,10 @@ function mapEtaTreeToMetrics(tree) {
     buffer_bottom: pickNumber(
       pickByURI(objs, '120/10251/0/0/12244', '120/10251/0/11155'),
       DEFAULT_METRICS.buffer_bottom,
+    ),
+    warmwater_storage: pickNumber(
+      pickByURI(objs, '120/10251/0/0/12271', '120/10251/0/11129'),
+      DEFAULT_METRICS.warmwater_storage,
     ),
     return_temp: pickNumber(
       pickByURI(objs, '24/10561/0/0/12220', '24/10561/0/11160'),
@@ -240,7 +245,7 @@ function PufferSubpage({ d }) {
       <div className="eta-metrics-col">
         <MetricPill label="Puffer oben" value={fmt(d?.buffer_top)} unit="C" />
         <MetricPill label="Puffer unten" value={fmt(d?.buffer_bottom)} unit="C" />
-        <MetricPill label="Delta" value={spread} />
+        <MetricPill label="Warmwasserspeicher" value={fmt(d?.warmwater_storage)} unit="C" />
       </div>
     </div>
   )
