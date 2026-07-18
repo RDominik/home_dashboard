@@ -341,8 +341,8 @@
 
 .eta-efilter-fire {
   position: absolute;
-  left: 10px;
-  top: 130px;
+  left: 30px;
+  top: 185px;
   width: 46px;
   height: auto;
   filter: drop-shadow(0 10px 12px rgba(0, 0, 0, 0.45));
