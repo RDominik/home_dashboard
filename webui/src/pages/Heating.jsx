@@ -273,12 +273,15 @@ function HkSubpage({ d }) {
 function EFilterSubpage({ d }) {
   return (
     <div className="eta-view eta-grid-efilter">
-      <div className="eta-machine-block">
-        <div className="eta-machine-art eta-filter" />
-      </div>
-      <div className="eta-metrics-col">
-        <MetricPill label="Spannung" value={fmt((d?.boiler_temp || 0) / 2400)} unit="kV" />
-        <MetricPill label="Strom" value={fmt((d?.feed_rate || 0) / 9000)} unit="mA" />
+      <div className="eta-machine-block eta-efilter-block">
+        <div className="eta-efilter-canvas">
+          <div className="eta-efilter-readouts">
+            <MetricPill label="Spannung" value={fmt((d?.boiler_temp || 0) / 2400)} unit="kV" />
+            <MetricPill label="Strom" value={fmt((d?.feed_rate || 0) / 9000)} unit="mA" />
+          </div>
+          <img className="eta-efilter-fire" src="/fire_cropped.png" alt="E.Filter Flamme" />
+          <img className="eta-efilter-image" src="/EFilter.png" alt="E.Filter" />
+        </div>
       </div>
     </div>
   )

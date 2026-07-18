@@ -118,6 +118,10 @@
   grid-template-columns: 1fr 220px;
 }
 
+.eta-grid-efilter {
+  grid-template-columns: 1fr;
+}
+
 .eta-machine-block {
   display: grid;
   place-items: center;
@@ -293,6 +297,55 @@
   background:
     linear-gradient(180deg, #2d333d 0%, #14171c 100%),
     repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.2) 0 6px, transparent 6px 20px);
+}
+
+.eta-efilter-block {
+  align-items: start;
+}
+
+.eta-efilter-canvas {
+  position: relative;
+  width: min(100%, 520px);
+  min-height: 360px;
+  padding-top: 8px;
+}
+
+.eta-efilter-readouts {
+  display: grid;
+  gap: 8px;
+  justify-content: start;
+  position: absolute;
+  left: 24px;
+  top: 8px;
+  z-index: 2;
+}
+
+.eta-efilter-readouts .eta-pill {
+  min-width: 118px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.35);
+  font-size: 0.92rem;
+}
+
+.eta-efilter-readouts .eta-pill strong {
+  font-size: 1.02rem;
+}
+
+.eta-efilter-image {
+  display: block;
+  width: min(100%, 360px);
+  margin: 92px auto 0;
+  filter: drop-shadow(0 16px 18px rgba(0, 0, 0, 0.45));
+}
+
+.eta-efilter-fire {
+  position: absolute;
+  left: 10px;
+  top: 130px;
+  width: 46px;
+  height: auto;
+  filter: drop-shadow(0 10px 12px rgba(0, 0, 0, 0.45));
 }
 
 .eta-house-outline {
