@@ -24,10 +24,16 @@ fi
 mkdir -p "${BIN_DIR}" "${USER_UNIT_DIR}"
 
 echo "[1/4] Build binary -> ${BIN_PATH}"
-go build -o "${BIN_PATH}" "${SYSTEMUPDATE_DIR}"
+(
+  cd "${SYSTEMUPDATE_DIR}"
+  go build -o "${BIN_PATH}" .
+)
 
 echo "[2/4] Install user unit -> ${UNIT_TARGET}"
 cp "${UNIT_TEMPLATE}" "${UNIT_TARGET}"
+
+# Set the repository path in the installed unit file to this checkout location.
+sed -i "s|%h/Repository/webgui|${PROJECT_ROOT}|g" "${UNIT_TARGET}"
 
 echo "[3/4] Reload user daemon"
 systemctl --user daemon-reload
