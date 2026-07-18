@@ -4,11 +4,16 @@ function buildSystemUpdateUrls() {
   const protocol = window.location.protocol
   const host = window.location.hostname
   const configuredBase = import.meta.env.VITE_SYSTEM_UPDATE_BASE_URL?.trim()
+  const configuredHostIp = import.meta.env.VITE_SYSTEM_UPDATE_HOST_IP?.trim()
   const candidates = [
     configuredBase,
     `${protocol}//${host}:8090`,
+    configuredHostIp ? `${protocol}//${configuredHostIp}:8090` : null,
+    `${protocol}//192.168.188.97:8090`,
     `${protocol}//localhost:8090`,
     `${protocol}//127.0.0.1:8090`,
+    configuredHostIp ? `http://${configuredHostIp}:8090` : null,
+    'http://192.168.188.97:8090',
     'http://localhost:8090',
     'http://127.0.0.1:8090',
   ].filter(Boolean)
