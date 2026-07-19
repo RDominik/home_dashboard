@@ -9,6 +9,13 @@ const TABS = [
   { key: 'sys', label: 'Sys' },
 ]
 
+const HK_TABS = [
+  { key: 'heizen', label: 'Heizen' },
+  { key: 'absenken', label: 'Absenken' },
+  { key: 'zeitautomatik', label: 'Zeitautomatik' },
+  { key: 'heizzeiten', label: 'Heizzeiten' },
+]
+
 const DEFAULT_METRICS = {
   boiler_temp: 0,
   boiler_pressure: 0,
@@ -18,6 +25,8 @@ const DEFAULT_METRICS = {
   return_temp: 0,
   outside_temp: 0,
   feed_rate: 0,
+  heating_status: 'Bereit',
+  heating_status_extra: 'Heizgrenze erreicht',
   burner_status: 'Standby',
 }
 
@@ -40,10 +49,8 @@ export default function Heating() {
     return () => clearInterval(t)
   }, [])
 
-  const statusText = useMemo(() => {
-    if (!metrics) return 'Bereit'
-    return /bereit|ein|on/i.test(String(metrics.burner_status ?? '')) ? 'Bereit' : 'Standby'
-  }, [metrics])
+  const statusText = useMemo(() => pickString(metrics?.heating_status, metrics?.burner_status, 'Bereit') ?? 'Bereit', [metrics])
+  const statusSubtext = useMemo(() => pickString(metrics?.heating_status_extra, ''), [metrics])
 
   return (
     <div className="eta-wrap">
@@ -71,7 +78,10 @@ export default function Heating() {
 
         <div className="eta-main">
           <section className="eta-stage">
-            <div className="eta-status-box">{statusText}</div>
+            <div className="eta-status-box">
+              <div className="eta-status-main">{statusText}</div>
+              {statusSubtext && <div className="eta-status-sub">{statusSubtext}</div>}
+            </div>
             {activeTab === 'kessel' && <KesselSubpage d={metrics} />}
             {activeTab === 'puffer' && <PufferSubpage d={metrics} />}
             {activeTab === 'hk' && <HkSubpage d={metrics} />}
@@ -142,6 +152,14 @@ function mapEtaTreeToMetrics(tree) {
     ),
     feed_rate: pickNumber(
       DEFAULT_METRICS.feed_rate,
+    ),
+    heating_status: pickString(
+      pickByURI(objs, '120/10101/0/0/19404'),
+      DEFAULT_METRICS.heating_status,
+    ),
+    heating_status_extra: pickString(
+      pickByURI(objs, '120/10101/0/0/19391'),
+      DEFAULT_METRICS.heating_status_extra,
     ),
     burner_status: pickString(
       pickByURI(objs, '24/10561/0/0/12000'),
@@ -252,19 +270,173 @@ function PufferSubpage({ d }) {
 }
 
 function HkSubpage({ d }) {
+  const [activeHkTab, setActiveHkTab] = useState('heizen')
+  const [heizenPermanent, setHeizenPermanent] = useState(false)
+  const [expandedDay, setExpandedDay] = useState('mo')
+  const [heizzzeiten, setHeizzzeiten] = useState({
+    mo: [{ von: '06:00', bis: '09:00' }, { von: '16:00', bis: '22:00' }, { von: '', bis: '' }],
+    di: [{ von: '06:00', bis: '09:00' }, { von: '16:00', bis: '22:00' }, { von: '', bis: '' }],
+    mi: [{ von: '06:00', bis: '09:00' }, { von: '16:00', bis: '22:00' }, { von: '', bis: '' }],
+    do: [{ von: '06:00', bis: '09:00' }, { von: '16:00', bis: '22:00' }, { von: '', bis: '' }],
+    fr: [{ von: '06:00', bis: '09:00' }, { von: '16:00', bis: '22:00' }, { von: '', bis: '' }],
+    sa: [{ von: '07:00', bis: '22:00' }, { von: '', bis: '' }, { von: '', bis: '' }],
+    so: [{ von: '07:00', bis: '21:00' }, { von: '', bis: '' }, { von: '', bis: '' }],
+  })
+
+  const days = [
+    { key: 'mo', label: 'Montag' },
+    { key: 'di', label: 'Dienstag' },
+    { key: 'mi', label: 'Mittwoch' },
+    { key: 'do', label: 'Donnerstag' },
+    { key: 'fr', label: 'Freitag' },
+    { key: 'sa', label: 'Samstag' },
+    { key: 'so', label: 'Sonntag' },
+  ]
+
+  const updateHeizzzeit = (day, idx, field, val) => {
+    setHeizzzeiten((prev) => ({
+      ...prev,
+      [day]: prev[day].map((hz, i) => i === idx ? { ...hz, [field]: val } : hz),
+    }))
+  }
+
+  const deleteHeizzzeit = (day, idx) => {
+    setHeizzzeiten((prev) => ({
+      ...prev,
+      [day]: prev[day].filter((_, i) => i !== idx),
+    }))
+  }
+
+  const addHeizzzeit = (day) => {
+    setHeizzzeiten((prev) => {
+      if (prev[day].length >= 3) {
+        return prev
+      }
+
+      return {
+        ...prev,
+        [day]: [...prev[day], { von: '', bis: '' }],
+      }
+    })
+  }
+
   return (
     <div className="eta-view eta-grid-hk">
       <div>
-        <div className="eta-hk-radiator" />
-        <div className="eta-hk-schedule">
-          <div className="eta-hk-track" />
-          <div className="eta-hk-window eta-hk-window-a" />
-          <div className="eta-hk-window eta-hk-window-b" />
+        <div className="eta-hk-tabs" role="tablist" aria-label="HK Betriebsarten">
+          {HK_TABS.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              role="tab"
+              aria-selected={activeHkTab === tab.key}
+              className={activeHkTab === tab.key ? 'eta-hk-tab eta-hk-tab-active' : 'eta-hk-tab'}
+              onClick={() => setActiveHkTab(tab.key)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="eta-hk-panel" role="tabpanel" aria-label="HK Inhalt">
+          <div className="eta-hk-radiator" />
+
+          {activeHkTab === 'heizen' && (
+            <div className="eta-hk-heizen-switch-row">
+              <span className="eta-hk-heizen-switch-label-left">Bis zur naechsten Absenkzeit</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={heizenPermanent}
+                aria-label="Heizen dauerhaft"
+                className={heizenPermanent ? 'eta-hk-switch eta-hk-switch-on' : 'eta-hk-switch'}
+                onClick={() => setHeizenPermanent((prev) => !prev)}
+              >
+                <span className="eta-hk-switch-thumb" />
+              </button>
+              <span className="eta-hk-heizen-switch-label-right">Dauernd</span>
+            </div>
+          )}
+
+          {activeHkTab === 'absenken' && (
+            <div className="eta-hk-mode-pill">Aktiv: Absenken</div>
+          )}
+
+          {activeHkTab === 'zeitautomatik' && (
+            <div className="eta-hk-schedule">
+              <div className="eta-hk-track" />
+              <div className="eta-hk-window eta-hk-window-a" />
+              <div className="eta-hk-window eta-hk-window-b" />
+            </div>
+          )}
+
+          {activeHkTab === 'heizzeiten' && (
+            <div className="eta-hk-times">
+              {days.map((day) => (
+                <div key={day.key} className="eta-hk-day-group">
+                  <button
+                    type="button"
+                    className="eta-hk-day-header"
+                    onClick={() => setExpandedDay(expandedDay === day.key ? null : day.key)}
+                  >
+                    <span className={`eta-hk-day-arrow ${expandedDay === day.key ? 'expanded' : ''}`}>▼</span>
+                    <span className="eta-hk-day-label">{day.label}</span>
+                  </button>
+
+                  {expandedDay === day.key && (
+                    <div className="eta-hk-day-content">
+                      {heizzzeiten[day.key].map((hz, idx) => (
+                        <div key={idx} className="eta-hk-heizzzeit-slot">
+                          <span className="eta-hk-heizzzeit-label">Heizzzeit {idx + 1}</span>
+                          <div className="eta-hk-heizzzeit-inputs">
+                            <span className="eta-hk-time-label">Von...</span>
+                            <input
+                              type="time"
+                              value={hz.von}
+                              onChange={(e) => updateHeizzzeit(day.key, idx, 'von', e.target.value)}
+                              className="eta-hk-time-input"
+                            />
+                            <span className="eta-hk-time-label">Bis...</span>
+                            <input
+                              type="time"
+                              value={hz.bis}
+                              onChange={(e) => updateHeizzzeit(day.key, idx, 'bis', e.target.value)}
+                              className="eta-hk-time-input"
+                            />
+                            <button
+                              type="button"
+                              className="eta-hk-delete-btn"
+                              onClick={() => deleteHeizzzeit(day.key, idx)}
+                              aria-label="Heizzzeit löschen"
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      {heizzzeiten[day.key].length < 3 && (
+                        <button
+                          type="button"
+                          className="eta-hk-add-heizzzeit-btn"
+                          onClick={() => addHeizzzeit(day.key)}
+                        >
+                          + Heizzzeit hinzufügen
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
       <div className="eta-metrics-col">
         <MetricPill label="Aussen" value={fmt(d?.outside_temp)} unit="C" />
-        <MetricPill label="Modus" value="Zeitautomatik" />
+        <MetricPill
+          label="Modus"
+          value={HK_TABS.find((tab) => tab.key === activeHkTab)?.label ?? 'Heizen'}
+        />
       </div>
     </div>
   )

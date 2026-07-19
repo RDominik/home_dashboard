@@ -91,9 +91,20 @@
   color: #1a1a1a;
   border-radius: 12px;
   padding: 12px 16px;
+  margin-bottom: 12px;
+}
+
+.eta-status-main {
   font-size: 2rem;
   font-weight: 800;
-  margin-bottom: 12px;
+  line-height: 1.05;
+}
+
+.eta-status-sub {
+  margin-top: 4px;
+  font-size: 0.9rem;
+  line-height: 1.2;
+  color: rgba(26, 26, 26, 0.88);
 }
 
 .eta-view {
@@ -368,6 +379,114 @@
   border: 2px solid #313845;
 }
 
+.eta-hk-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.eta-hk-tab {
+  border: 1px solid #3f4555;
+  background: linear-gradient(180deg, #2d3340 0%, #1e2430 100%);
+  color: #f3f5fa;
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 0.9rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.eta-hk-tab-active {
+  border-color: #ffd000;
+  background: linear-gradient(180deg, #ffe772 0%, #ffcf00 100%);
+  color: #171717;
+}
+
+.eta-hk-panel {
+  border: 1px solid #3f4555;
+  border-radius: 12px;
+  padding: 14px;
+  background: linear-gradient(180deg, #1e232d 0%, #131821 100%);
+}
+
+.eta-hk-mode-pill {
+  width: fit-content;
+  margin: 14px auto 0;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid #465067;
+  background: linear-gradient(180deg, #2f3643 0%, #1c222d 100%);
+  color: #f3f6fb;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.eta-hk-heizen-switch-row {
+  margin: 14px auto 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  width: fit-content;
+  border: 1px solid #ffd200;
+  border-radius: 3px;
+  background:
+    linear-gradient(180deg, #2a2f36 0%, #1b2027 100%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.018) 0 2px, transparent 2px 7px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.eta-hk-heizen-switch-label-left {
+  color: #ffd200;
+  font-size: 0.98rem;
+  font-weight: 700;
+  line-height: 1.02;
+  max-width: 180px;
+}
+
+.eta-hk-heizen-switch-label-right {
+  color: #f0f3f8;
+  font-size: 0.98rem;
+  font-weight: 600;
+}
+
+.eta-hk-switch {
+  position: relative;
+  width: 66px;
+  height: 25px;
+  border-radius: 999px;
+  border: 1px solid #5a6374;
+  background: linear-gradient(180deg, #2d333d, #171c24);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
+  cursor: pointer;
+  padding: 0;
+}
+
+.eta-hk-switch-thumb {
+  position: absolute;
+  left: 1px;
+  top: 2px;
+  width: 28px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid #ffd200;
+  background: linear-gradient(180deg, #222831 0%, #0f1319 100%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  transition: transform 0.16s ease;
+}
+
+.eta-hk-switch-on {
+  border-color: #ffd200;
+  background: linear-gradient(180deg, #2f353f, #1a1f28);
+}
+
+.eta-hk-switch-on .eta-hk-switch-thumb {
+  transform: translateX(30px);
+}
+
 .eta-hk-schedule {
   position: relative;
   margin-top: 20px;
@@ -401,6 +520,150 @@
 .eta-hk-window-b {
   left: 63%;
   width: 130px;
+}
+
+.eta-hk-times {
+  margin-top: 14px;
+  display: grid;
+  gap: 0;
+}
+
+.eta-hk-day-group {
+  border: 1px solid #3f4555;
+  border-top: none;
+}
+
+.eta-hk-day-group:first-child {
+  border-top: 1px solid #3f4555;
+  border-radius: 8px 8px 0 0;
+}
+
+.eta-hk-day-group:last-child {
+  border-radius: 0 0 8px 8px;
+}
+
+.eta-hk-day-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: linear-gradient(180deg, #242a35 0%, #1a1f29 100%);
+  border: 0;
+  color: #f3f5fa;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 650;
+  text-align: left;
+}
+
+.eta-hk-day-header:hover {
+  background: linear-gradient(180deg, #2d333e 0%, #202530 100%);
+}
+
+.eta-hk-day-arrow {
+  display: inline-block;
+  transition: transform 0.16s ease;
+  font-size: 0.8rem;
+  color: #ffd200;
+}
+
+.eta-hk-day-arrow.expanded {
+  transform: rotate(0deg);
+}
+
+.eta-hk-day-label {
+  flex: 1;
+}
+
+.eta-hk-day-content {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  background: linear-gradient(180deg, #1a1f29 0%, #131820 100%);
+}
+
+.eta-hk-heizzzeit-slot {
+  border: 1px solid #3f4555;
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: linear-gradient(180deg, #242a35 0%, #1b2128 100%);
+}
+
+.eta-hk-heizzzeit-label {
+  display: block;
+  color: #ffd200;
+  font-size: 0.88rem;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.eta-hk-heizzzeit-inputs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.eta-hk-time-label {
+  color: #a7adb7;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.eta-hk-time-input {
+  flex: 0 0 auto;
+  width: 70px;
+  padding: 4px 6px;
+  border: 1px solid #465067;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #1f242d 0%, #15191f 100%);
+  color: #eceff4;
+  font-size: 0.85rem;
+  font-family: 'Courier New', monospace;
+}
+
+.eta-hk-time-input:focus {
+  outline: none;
+  border-color: #ffd200;
+  box-shadow: 0 0 4px rgba(255, 210, 0, 0.3);
+}
+
+.eta-hk-delete-btn {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border: 1px solid #465067;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #2a2f37 0%, #1b2027 100%);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0;
+  display: grid;
+  place-items: center;
+}
+
+.eta-hk-delete-btn:hover {
+  border-color: #ff4444;
+  background: linear-gradient(180deg, #3a2f2f 0%, #2b1a1a 100%);
+}
+
+.eta-hk-add-heizzzeit-btn {
+  width: 100%;
+  padding: 6px 10px;
+  margin-top: 4px;
+  border: 1px dashed #465067;
+  border-radius: 4px;
+  background: transparent;
+  color: #ffd200;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.eta-hk-add-heizzzeit-btn:hover {
+  border-color: #ffd200;
+  background: rgba(255, 210, 0, 0.08);
 }
 
 .eta-metrics-col {
