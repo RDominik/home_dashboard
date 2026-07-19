@@ -30,6 +30,13 @@ const DEFAULT_METRICS = {
   burner_status: 'Standby',
 }
 
+const PANEL_STATUS = {
+  kessel: { main: 'Kessel aktiv', sub: 'Dummywert: Kesselstatus' },
+  puffer: { main: 'Puffer geladen', sub: 'Dummywert: Pufferspeicher' },
+  efilter: { main: 'E.Filter bereit', sub: 'Dummywert: Filterzustand' },
+  sys: { main: 'System ok', sub: 'Dummywert: Systemstatus' },
+}
+
 export default function Heating() {
   const [d, setD] = useState(null)
   const [activeTab, setActiveTab] = useState('kessel')
@@ -48,9 +55,6 @@ export default function Heating() {
     const t = setInterval(() => setNow(new Date()), 1000)
     return () => clearInterval(t)
   }, [])
-
-  const statusText = useMemo(() => pickString(metrics?.heating_status, metrics?.burner_status, 'Bereit') ?? 'Bereit', [metrics])
-  const statusSubtext = useMemo(() => pickString(metrics?.heating_status_extra, ''), [metrics])
 
   return (
     <div className="eta-wrap">
@@ -78,10 +82,6 @@ export default function Heating() {
 
         <div className="eta-main">
           <section className="eta-stage">
-            <div className="eta-status-box">
-              <div className="eta-status-main">{statusText}</div>
-              {statusSubtext && <div className="eta-status-sub">{statusSubtext}</div>}
-            </div>
             {activeTab === 'kessel' && <KesselSubpage d={metrics} />}
             {activeTab === 'puffer' && <PufferSubpage d={metrics} />}
             {activeTab === 'hk' && <HkSubpage d={metrics} />}
@@ -214,11 +214,13 @@ function RightActions({ items }) {
 }
 
 function KesselSubpage({ d }) {
+  const status = PANEL_STATUS.kessel
   const pressureValue = d?.boiler_pressure ?? (typeof d?.boiler_temp === 'number' ? d.boiler_temp / 38 : null)
   const pressureText = pressureValue == null ? '' : `${fmt(pressureValue)} bar`
 
   return (
     <div className="eta-view eta-grid-kessel">
+      <TabStatusBox main={status.main} sub={status.sub} />
       <div className="eta-machine-block eta-kessel-block">
         <div className="eta-kessel-canvas">
           <img className="eta-kessel-image" src="/produktbild-eta-hackgutkessel-ehack.png" alt="Heizkessel" />
@@ -243,6 +245,7 @@ function KesselSubpage({ d }) {
 }
 
 function PufferSubpage({ d }) {
+  const status = PANEL_STATUS.puffer
   const topValue = `${fmt(d?.buffer_top)} C`
   const bottomValue = `${fmt(d?.buffer_bottom)} C`
   const spread =
@@ -252,6 +255,7 @@ function PufferSubpage({ d }) {
 
   return (
     <div className="eta-view eta-grid-puffer">
+      <TabStatusBox main={status.main} sub={status.sub} />
       <div className="eta-machine-block eta-puffer-block">
         <div className="eta-puffer-canvas">
           <img className="eta-puffer-image" src="/Puffer.png" alt="Puffer" />
@@ -273,6 +277,8 @@ function HkSubpage({ d }) {
   const [activeHkTab, setActiveHkTab] = useState('heizen')
   const [heizenPermanent, setHeizenPermanent] = useState(false)
   const [expandedDay, setExpandedDay] = useState('mo')
+  const statusText = pickString(d?.heating_status, d?.burner_status, 'Bereit') ?? 'Bereit'
+  const statusSubtext = pickString(d?.heating_status_extra, '')
   const [heizzzeiten, setHeizzzeiten] = useState({
     mo: [{ von: '06:00', bis: '09:00' }, { von: '16:00', bis: '22:00' }, { von: '', bis: '' }],
     di: [{ von: '06:00', bis: '09:00' }, { von: '16:00', bis: '22:00' }, { von: '', bis: '' }],
@@ -323,6 +329,11 @@ function HkSubpage({ d }) {
   return (
     <div className="eta-view eta-grid-hk">
       <div>
+        <div className="eta-status-box eta-status-box-hk">
+          <div className="eta-status-main">{statusText}</div>
+          {statusSubtext && <div className="eta-status-sub">{statusSubtext}</div>}
+        </div>
+
         <div className="eta-hk-tabs" role="tablist" aria-label="HK Betriebsarten">
           {HK_TABS.map((tab) => (
             <button
@@ -442,9 +453,21 @@ function HkSubpage({ d }) {
   )
 }
 
+function TabStatusBox({ main, sub }) {
+  return (
+    <div className="eta-status-box">
+      <div className="eta-status-main">{main}</div>
+      {sub && <div className="eta-status-sub">{sub}</div>}
+    </div>
+  )
+}
+
 function EFilterSubpage({ d }) {
+  const status = PANEL_STATUS.efilter
+
   return (
     <div className="eta-view eta-grid-efilter">
+      <TabStatusBox main={status.main} sub={status.sub} />
       <div className="eta-machine-block eta-efilter-block">
         <div className="eta-efilter-canvas">
           <div className="eta-efilter-readouts">
@@ -460,8 +483,11 @@ function EFilterSubpage({ d }) {
 }
 
 function SysSubpage() {
+  const status = PANEL_STATUS.sys
+
   return (
     <div className="eta-view eta-grid-sys">
+      <TabStatusBox main={status.main} sub={status.sub} />
       <div className="eta-house-outline" />
       <div className="eta-metrics-col">
         <MetricPill label="System" value="Bereit" />

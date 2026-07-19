@@ -86,6 +86,7 @@
 }
 
 .eta-status-box {
+  grid-column: 1 / -1;
   border: 1px solid #232834;
   background: linear-gradient(180deg, #ffde29, #ffcb00);
   color: #1a1a1a;
