@@ -33,7 +33,9 @@
             "nano/esp32/battery/monitor",
             "nano/esp32/battery/voltage",
             "nano/esp32/battery/percent",
-            "nano/esp32/battery/rate"
+            "nano/esp32/battery/rate",
+            "nano/esp32/ip",
+            "nano/esp32/battery/charging"
         ]
     }    
 }

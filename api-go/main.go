@@ -2,12 +2,11 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 
+	chickendoorpkg "webgui-api/chickenDoor"
 	"webgui-api/mqtt"
 	restpkg "webgui-api/rest"
 	wallboxpkg "webgui-api/wallbox"
@@ -84,86 +83,6 @@ func mqttStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---------- Main ----------
-// ---------- Hühnerklappe ----------
-const nanoSetPrefix = "nano/esp32"
-
-var chickenAllowedKeys = map[string]bool{
-	"engine": true, "engine/sleep": true,
-}
-
-type chickenSetRequest struct {
-	Key   string `json:"key"`
-	Value any    `json:"value"`
-}
-
-type huehnerklappeStatus struct {
-	Position   string `json:"position"`
-	LastAction string `json:"lastAction"`
-	Error      string `json:"error,omitempty"`
-	Battery    int    `json:"battery"`
-	WakeReason string `json:"wakeReason"`
-}
-
-func huehnerklappeStatusHandler(w http.ResponseWriter, r *http.Request) {
-	// TODO: Werte aus MQTT oder Hardware holen
-	// Beispiel-Daten:
-	status := huehnerklappeStatus{
-		Position:   "offen",
-		LastAction: "manuell",
-		Error:      "",
-		Battery:    87,
-		WakeReason: "Timer",
-	}
-	jsonResponse(w, status)
-}
-
-type huehnerklappeSetRequest struct {
-	Command  string `json:"command"`
-	Duration int    `json:"duration,omitempty"`
-}
-
-func huehnerklappeSetHandler(writer http.ResponseWriter, r *http.Request) {
-	// var req huehnerklappeSetRequest
-	// if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-	// 	jsonError(w, http.StatusBadRequest, "Ungültiger JSON body")
-	// 	return
-	// }
-	// // TODO: Befehl an Hardware/MQTT senden
-	// log.Printf("Hühnerklappe: %s, Dauer: %d", req.Command, req.Duration)
-	// jsonResponse(w, map[string]any{"ok": true, "command": req.Command, "duration": req.Duration})
-
-	// Validierung
-	var req chickenSetRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(writer, http.StatusBadRequest, "Ungültiger JSON body")
-		return
-	}
-	print("Received huehnerklappe set request:", req.Key, req.Value)
-	if !chickenAllowedKeys[req.Key] {
-		keys := make([]string, 0, len(chickenAllowedKeys))
-		for k := range chickenAllowedKeys {
-			keys = append(keys, k)
-		}
-		jsonResponse(writer, map[string]any{
-			"ok":    false,
-			"error": fmt.Sprintf("Key '%s' nicht erlaubt. Erlaubt: %s", req.Key, strings.Join(keys, ", ")),
-		})
-		return
-	}
-
-	topic := fmt.Sprintf("%s/%s/set", nanoSetPrefix, req.Key)
-	if err := mqttManager.Publish(topic, req.Value); err != nil {
-		jsonResponse(writer, map[string]any{"ok": false, "error": err.Error()})
-		return
-	}
-
-	jsonResponse(writer, map[string]any{
-		"ok":    true,
-		"topic": topic,
-		"key":   req.Key,
-		"value": req.Value,
-	})
-}
 
 func main() {
 	// MQTT starten
@@ -183,6 +102,7 @@ func main() {
 
 	// Router
 	mux := http.NewServeMux()
+	chickenDoorHandler := chickendoorpkg.NewAPIHandler(mqttManager)
 
 	// Wallbox
 	wb := wallboxpkg.NewHandler(mqttManager)
@@ -191,8 +111,8 @@ func main() {
 	mux.HandleFunc("/api/wallbox/history", wb.History)
 
 	// Hühnerklappe
-	mux.HandleFunc("/api/huehnerklappe/status", huehnerklappeStatusHandler)
-	mux.HandleFunc("/api/huehnerklappe/set", huehnerklappeSetHandler)
+	mux.HandleFunc("/api/huehnerklappe/status", chickenDoorHandler.StatusHandler)
+	mux.HandleFunc("/api/huehnerklappe/set", chickenDoorHandler.SetHandler)
 
 	// Inverter
 	mux.HandleFunc("/api/inverter/summary", inverterSummary)

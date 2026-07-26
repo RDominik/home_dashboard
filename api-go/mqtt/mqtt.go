@@ -30,10 +30,11 @@ type Manager struct {
 	Port   int
 	Topics []string
 
-	mutex    sync.RWMutex
-	received map[string]any
-	client   pahomqtt.Client
-	running  bool
+	mutex      sync.RWMutex
+	received   map[string]any
+	receivedAt map[string]time.Time
+	client     pahomqtt.Client
+	running    bool
 }
 
 // / @brief Enthält die Topic-Listen aus dem Abschnitt "topics" der Konfigurationsdatei.
@@ -106,10 +107,11 @@ func NewManager(configPath string) (*Manager, error) {
 	topics = append(topics, cfg.Topics.NanoMqtt...)
 
 	return &Manager{
-		Broker:   cfg.BrokerIP,
-		Port:     cfg.Port,
-		Topics:   topics,
-		received: make(map[string]any),
+		Broker:     cfg.BrokerIP,
+		Port:       cfg.Port,
+		Topics:     topics,
+		received:   make(map[string]any),
+		receivedAt: make(map[string]time.Time),
 	}, nil
 }
 
@@ -127,6 +129,17 @@ func (mqtt_manager *Manager) Messages() map[string]any {
 		mqtt_map[key] = value
 	}
 	return mqtt_map
+}
+
+// MessageWithTimestamp returns the last value for a key and when it was received.
+func (mqtt_manager *Manager) MessageWithTimestamp(key string) (any, time.Time, bool) {
+	mqtt_manager.mutex.RLock()
+	defer mqtt_manager.mutex.RUnlock()
+	value, ok := mqtt_manager.received[key]
+	if !ok {
+		return nil, time.Time{}, false
+	}
+	return value, mqtt_manager.receivedAt[key], true
 }
 
 // / @brief Gibt an, ob der MQTT-Client aktuell mit dem Broker verbunden ist.
@@ -308,5 +321,6 @@ func (mqtt_manager *Manager) handleMessage(client pahomqtt.Client, msg pahomqtt.
 
 	mqtt_manager.mutex.Lock()
 	mqtt_manager.received[key] = value
+	mqtt_manager.receivedAt[key] = time.Now()
 	mqtt_manager.mutex.Unlock()
 }

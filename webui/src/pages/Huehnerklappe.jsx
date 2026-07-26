@@ -9,6 +9,7 @@ export default function Huehnerklappe() {
   const [feedback, setFeedback] = useState(null)
   const [battery, setBattery] = useState(null)
   const [wakeReason, setWakeReason] = useState(null)
+  const [charging, setCharging] = useState(null)
 
   // Status laden
   const loadStatus = async () => {
@@ -19,6 +20,7 @@ export default function Huehnerklappe() {
         setStatus(data)
         setBattery(data.battery ?? null)
         setWakeReason(data.wakeReason ?? null)
+        setCharging(data.charging ?? null)
       }
     } catch { /* ignore */ }
   }
@@ -100,10 +102,18 @@ export default function Huehnerklappe() {
         {status ? (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
             <StatusItem label="Akku" value={battery !== null ? `${battery}%` : '—'} />
+            <StatusItem label="Charging" value={charging ?? '—'} />
+            <StatusItem label="IP" value={status.ip ?? '—'} />
             <StatusItem label="Position" value={status.position} />
             <StatusItem label="Letzte Aktion" value={status.lastAction} />
-            <StatusItem label="Fehler" value={status.error ?? '—'} />
+            <StatusItem label="Controller" value={status.controllerState ?? '—'} />
+            <StatusItem label="Sleep-Status" value={status.sleepState ?? '—'} />
             <StatusItem label="Weckgrund" value={wakeReason ?? '—'} />
+            <StatusItem label="Sleep gesendet" value={status.sleepCommandAt ?? '—'} />
+            <StatusItem label="Sleeping seit" value={status.sleepingAt ?? '—'} />
+            <StatusItem label="Online seit" value={status.onlineAt ?? '—'} />
+            <StatusItem label="Diff sleeping→online" value={status.wakeDeltaMs !== undefined && status.wakeDeltaMs !== null ? `${status.wakeDeltaMs} ms` : '—'} />
+            <StatusItem label="Fehler" value={status.error ?? '—'} />
           </div>
         ) : (
           <p style={{ color: '#9ca3af' }}>Lade Status…</p>
