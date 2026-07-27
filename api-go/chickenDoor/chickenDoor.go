@@ -213,6 +213,9 @@ func (h *APIHandler) SetHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	topic := fmt.Sprintf("%s/%s/set", nanoSetPrefix, req.Key)
+	if req.Key == "engine/sleep" {
+		topic = fmt.Sprintf("%s/sleepms/set", nanoSetPrefix)
+	}
 	if err := h.mqttManager.Publish(topic, req.Value); err != nil {
 		jsonResponse(w, map[string]any{"ok": false, "error": err.Error()})
 		return
