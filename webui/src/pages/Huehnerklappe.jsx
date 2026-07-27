@@ -36,7 +36,7 @@ export default function Huehnerklappe() {
     setSending(true)
     setFeedback(null)
     try {
-      const r = await fetch(`${API}/nano/esp32`, {
+      const r = await fetch(`${API}/set`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key, value }),
