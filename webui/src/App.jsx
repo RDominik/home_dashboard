@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 
 const linkStyle = ({ isActive }) => ({
@@ -12,9 +12,21 @@ const linkStyle = ({ isActive }) => ({
 })
 
 export default function App() {
+  const [now, setNow] = useState(new Date())
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  const currentTime = new Intl.DateTimeFormat('de-DE', {
+    dateStyle: 'medium',
+    timeStyle: 'medium',
+  }).format(now)
+
   return (
     <div style={{ display: 'flex', height: '100vh', background: '#cfcbcbea' }}>
-      <aside style={{ width: 260, borderRight: '1px solid #020202', padding: 16, background:'#cac6c6a9' }}>
+      <aside style={{ width: 260, borderRight: '1px solid #020202', padding: 16, background:'#cac6c6a9', display: 'flex', flexDirection: 'column' }}>
         <h2 style={{ marginTop: 0, letterSpacing: '0.2px' }}>Dashboards
           
         </h2>
@@ -27,7 +39,9 @@ export default function App() {
           <NavLink to="/grafana" style={linkStyle}>Grafana</NavLink>
           <NavLink to="/update" style={linkStyle}>Update</NavLink>
         </nav>
-        <div style={{ marginTop: 24, fontSize: 12, color: '#050505' }}>
+        <div style={{ marginTop: 'auto', paddingTop: 24, fontSize: 12, color: '#050505' }}>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>Uhrzeit</div>
+          <div>{currentTime}</div>
           <div>v0.1 (Preview)</div>
         </div>
       </aside>
