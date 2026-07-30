@@ -4,6 +4,7 @@ const API = '/api/huehnerklappe'
 
 export default function Huehnerklappe() {
     const [sleepTime, setSleepTime] = useState(60) // default 60 Sekunden
+  const [sleepUntil, setSleepUntil] = useState('')
   const [status, setStatus] = useState(null)
   const [sending, setSending] = useState(false)
   const [feedback, setFeedback] = useState(null)
@@ -32,7 +33,7 @@ export default function Huehnerklappe() {
   }, [])
 
   // Befehl senden
-  const sendCommand = async (key, value = null) => {
+  const sendCommand = async (key, value = null, successMessage = null) => {
     setSending(true)
     setFeedback(null)
     try {
@@ -43,7 +44,7 @@ export default function Huehnerklappe() {
       })
       const data = await r.json()
       if (data.ok) {
-        setFeedback({ type: 'success', msg: `✅ ${key} gesendet` })
+        setFeedback({ type: 'success', msg: successMessage ?? `✅ ${key} gesendet` })
       } else {
         setFeedback({ type: 'error', msg: `❌ ${data.error}` })
       }
@@ -53,6 +54,39 @@ export default function Huehnerklappe() {
     } finally {
       setSending(false)
     }
+  }
+
+  const sleepSecondsUntil = (targetTime) => {
+    const parts = targetTime.split(':').map(Number)
+    if (parts.length < 2 || parts.some(Number.isNaN)) {
+      return null
+    }
+
+    const now = new Date()
+    const target = new Date(now)
+    target.setHours(parts[0], parts[1], parts[2] ?? 0, 0)
+
+    if (target <= now) {
+      target.setDate(target.getDate() + 1)
+    }
+
+    const diffSeconds = Math.ceil((target.getTime() - now.getTime()) / 1000)
+    return Math.max(1, diffSeconds)
+  }
+
+  const sendSleepUntil = async () => {
+    if (!sleepUntil) {
+      setFeedback({ type: 'error', msg: '❌ Bitte zuerst eine Uhrzeit auswählen.' })
+      return
+    }
+
+    const seconds = sleepSecondsUntil(sleepUntil)
+    if (!seconds) {
+      setFeedback({ type: 'error', msg: '❌ Ungültige Uhrzeit.' })
+      return
+    }
+
+    await sendCommand('engine/sleep', seconds, `✅ Sleep bis ${sleepUntil} gesendet (${seconds}s)`)
   }
 
   const cardStyle = {
@@ -152,6 +186,25 @@ export default function Huehnerklappe() {
             onClick={() => sendCommand('engine/sleep', sleepTime )}
           >
             Controller schlafen lassen
+          </button>
+        </div>
+        <div style={{ marginTop: 14, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <label style={{ fontSize: 14, color: '#6b7280' }}>
+            Schlafen bis (Uhrzeit):
+            <input
+              type="time"
+              step={1}
+              value={sleepUntil}
+              onChange={e => setSleepUntil(e.target.value)}
+              style={{ marginLeft: 8, padding: '6px 8px', borderRadius: 6, border: '1px solid #e5e7eb' }}
+            />
+          </label>
+          <button
+            style={btnStyle('#4338ca')}
+            disabled={sending}
+            onClick={sendSleepUntil}
+          >
+            Bis Uhrzeit schlafen lassen
           </button>
         </div>
       </div>
