@@ -15,6 +15,8 @@ import (
 
 const nanoSetPrefix = "nano/esp32"
 
+var statusTimeLocation = mustLoadLocation("Europe/Berlin")
+
 var allowedSetKeys = map[string]bool{
 	"engine":       true,
 	"engine/sleep": true,
@@ -56,6 +58,14 @@ func NewAPIHandler(mqttManager *mqtt.Manager) *APIHandler {
 	return &APIHandler{mqttManager: mqttManager}
 }
 
+func mustLoadLocation(name string) *time.Location {
+	loc, err := time.LoadLocation(name)
+	if err != nil {
+		return time.Local
+	}
+	return loc
+}
+
 func toString(value any) string {
 	switch typed := value.(type) {
 	case string:
@@ -91,7 +101,7 @@ func formatSecondTimestamp(ts time.Time) string {
 	if ts.IsZero() {
 		return ""
 	}
-	return ts.Local().Format("2006-01-02 15:04:05")
+	return ts.In(statusTimeLocation).Format("2006-01-02 15:04:05")
 }
 
 func normalizeControllerState(state string) string {
