@@ -15,6 +15,7 @@ export default function Huehnerklappe() {
   const [battery, setBattery] = useState(null)
   const [wakeReason, setWakeReason] = useState(null)
   const [charging, setCharging] = useState(null)
+  const [clockOffsetMs, setClockOffsetMs] = useState(0)
 
   // Status laden
   const loadStatus = async () => {
@@ -26,6 +27,9 @@ export default function Huehnerklappe() {
         setBattery(data.battery ?? null)
         setWakeReason(data.wakeReason ?? null)
         setCharging(data.charging ?? null)
+        if (Number.isFinite(data.serverNowMs)) {
+          setClockOffsetMs(Date.now() - data.serverNowMs)
+        }
       }
     } catch { /* ignore */ }
   }
@@ -252,6 +256,22 @@ export default function Huehnerklappe() {
     sendColor: '#047857',
   }
 
+  const formatStatusTimestamp = (unixMs) => {
+    if (Number.isFinite(unixMs) && unixMs > 0) {
+      const correctedMs = unixMs + clockOffsetMs
+      return new Intl.DateTimeFormat('de-DE', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+      }).format(new Date(correctedMs))
+    }
+    return '—'
+  }
+
   return (
     <div style={{ maxWidth: 700, margin: '0 auto' }}>
       <h1 style={{ marginBottom: 4 }}>Hühnerklappe Steuerung</h1>
@@ -286,9 +306,9 @@ export default function Huehnerklappe() {
             <StatusItem label="Controller" value={status.controllerState ?? '—'} />
             <StatusItem label="Sleep-Status" value={status.sleepState ?? '—'} />
             <StatusItem label="Weckgrund" value={wakeReason ?? '—'} />
-            <StatusItem label="Sleep gesendet" value={status.sleepCommandAt ?? '—'} />
-            <StatusItem label="Sleeping seit" value={status.sleepingAt ?? '—'} />
-            <StatusItem label="Online seit" value={status.onlineAt ?? '—'} />
+            <StatusItem label="Sleep gesendet" value={formatStatusTimestamp(status.sleepCommandAtMs)} />
+            <StatusItem label="Sleeping seit" value={formatStatusTimestamp(status.sleepingAtMs)} />
+            <StatusItem label="Online seit" value={formatStatusTimestamp(status.onlineAtMs)} />
             <StatusItem label="Diff sleeping→online" value={status.wakeDeltaMs !== undefined && status.wakeDeltaMs !== null ? `${status.wakeDeltaMs} ms` : '—'} />
             <StatusItem label="Fehler" value={status.error ?? '—'} />
           </div>
