@@ -27,6 +27,12 @@ type setRequest struct {
 	Value any    `json:"value"`
 }
 
+type sleepScheduleRequest struct {
+	Count        int      `json:"count"`
+	Timestamps   []string `json:"timestamps"`
+	AwakeSeconds int      `json:"awakeSeconds"`
+}
+
 type StatusResponse struct {
 	Position        string `json:"position"`
 	LastAction      string `json:"lastAction"`
@@ -52,6 +58,9 @@ type APIHandler struct {
 	sleepingAt          time.Time
 	onlineAt            time.Time
 	wakeDeltaMs         int64
+
+	scheduleAwakeSeconds int
+	scheduleTimestamps   []string
 }
 
 func NewAPIHandler(mqttManager *mqtt.Manager) *APIHandler {
@@ -244,6 +253,64 @@ func (h *APIHandler) SetHandler(w http.ResponseWriter, r *http.Request) {
 		"topic": topic,
 		"key":   req.Key,
 		"value": req.Value,
+	})
+}
+
+func isValidScheduleTimestamp(value string) bool {
+	if _, err := time.Parse("15:04", value); err == nil {
+		return true
+	}
+	if _, err := time.Parse("15:04:05", value); err == nil {
+		return true
+	}
+	return false
+}
+
+func (h *APIHandler) SleepScheduleHandler(w http.ResponseWriter, r *http.Request) {
+	var req sleepScheduleRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "Ungültiger JSON body")
+		return
+	}
+
+	if req.Count <= 0 {
+		jsonError(w, http.StatusBadRequest, "count muss > 0 sein")
+		return
+	}
+	if len(req.Timestamps) != req.Count {
+		jsonError(w, http.StatusBadRequest, "count stimmt nicht mit timestamps-Länge überein")
+		return
+	}
+	if req.AwakeSeconds < 0 {
+		jsonError(w, http.StatusBadRequest, "awakeSeconds darf nicht negativ sein")
+		return
+	}
+
+	cleanedTimestamps := make([]string, 0, len(req.Timestamps))
+	for _, ts := range req.Timestamps {
+		trimmed := strings.TrimSpace(ts)
+		if trimmed == "" {
+			jsonError(w, http.StatusBadRequest, "Leere Timestamps sind nicht erlaubt")
+			return
+		}
+		if !isValidScheduleTimestamp(trimmed) {
+			jsonError(w, http.StatusBadRequest, fmt.Sprintf("Ungültiger Timestamp '%s'. Erlaubt: HH:MM oder HH:MM:SS", trimmed))
+			return
+		}
+		cleanedTimestamps = append(cleanedTimestamps, trimmed)
+	}
+
+	h.mu.Lock()
+	h.scheduleAwakeSeconds = req.AwakeSeconds
+	h.scheduleTimestamps = append([]string(nil), cleanedTimestamps...)
+	h.mu.Unlock()
+
+	jsonResponse(w, map[string]any{
+		"ok":           true,
+		"stored":       true,
+		"count":        req.Count,
+		"timestamps":   cleanedTimestamps,
+		"awakeSeconds": req.AwakeSeconds,
 	})
 }
 
