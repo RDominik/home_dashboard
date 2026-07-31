@@ -5,6 +5,10 @@ const API = '/api/huehnerklappe'
 export default function Huehnerklappe() {
     const [sleepTime, setSleepTime] = useState(60) // default 60 Sekunden
   const [sleepUntil, setSleepUntil] = useState('')
+  const [scheduleTimestamps, setScheduleTimestamps] = useState(['06:30:00', '12:00:00', '18:30:00'])
+  const [awakeSeconds, setAwakeSeconds] = useState(30)
+  const [pickerIndex, setPickerIndex] = useState(null)
+  const [pickerDraft, setPickerDraft] = useState({ hour: '00', minute: '00', second: '00' })
   const [status, setStatus] = useState(null)
   const [sending, setSending] = useState(false)
   const [feedback, setFeedback] = useState(null)
@@ -89,6 +93,95 @@ export default function Huehnerklappe() {
     await sendCommand('engine/sleep', seconds, `✅ Sleep bis ${sleepUntil} gesendet (${seconds}s)`)
   }
 
+  const updateScheduleTimestamp = (index, value) => {
+    setScheduleTimestamps(prev => {
+      const next = [...prev]
+      next[index] = value
+      return next
+    })
+  }
+
+  const addScheduleTimestamp = () => {
+    setScheduleTimestamps(prev => {
+      if (prev.length >= 20) {
+        return prev
+      }
+      return [...prev, '00:00:00']
+    })
+  }
+
+  const removeScheduleTimestamp = (index) => {
+    setScheduleTimestamps(prev => {
+      if (prev.length <= 1) {
+        return prev
+      }
+      return prev.filter((_, i) => i !== index)
+    })
+  }
+
+  const pad2 = (value) => String(value).padStart(2, '0')
+
+  const parseTimestampToDraft = (timestamp) => {
+    const [hour = '00', minute = '00', second = '00'] = String(timestamp || '').split(':')
+    return {
+      hour: pad2(Number(hour) || 0),
+      minute: pad2(Number(minute) || 0),
+      second: pad2(Number(second) || 0),
+    }
+  }
+
+  const draftToTimestamp = (draft) => `${draft.hour}:${draft.minute}:${draft.second}`
+
+  const openTimestampPicker = (index) => {
+    setPickerDraft(parseTimestampToDraft(scheduleTimestamps[index]))
+    setPickerIndex(index)
+  }
+
+  const applyTimestampPicker = () => {
+    if (pickerIndex === null) {
+      return
+    }
+    const value = draftToTimestamp(pickerDraft)
+    updateScheduleTimestamp(pickerIndex, value)
+    setPickerIndex(null)
+  }
+
+  const sendSleepSchedule = async () => {
+    const timestamps = scheduleTimestamps.map(v => v.trim())
+    if (timestamps.some(v => !v)) {
+      setFeedback({ type: 'error', msg: '❌ Bitte alle Timestamp-Felder ausfüllen.' })
+      return
+    }
+
+    setSending(true)
+    setFeedback(null)
+    try {
+      const r = await fetch(`${API}/sleep-schedule`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          count: timestamps.length,
+          timestamps,
+          awakeSeconds,
+        }),
+      })
+      const data = await r.json()
+      if (data.ok) {
+        if (data.stored) {
+          setFeedback({ type: 'success', msg: `✅ ${timestamps.length} Timestamps gespeichert (wach: ${awakeSeconds}s)` })
+        } else {
+          setFeedback({ type: 'success', msg: `✅ ${timestamps.length} Timestamps gesendet (wach: ${awakeSeconds}s)` })
+        }
+      } else {
+        setFeedback({ type: 'error', msg: `❌ ${data.error}` })
+      }
+    } catch (err) {
+      setFeedback({ type: 'error', msg: `❌ Fehler: ${err.message}` })
+    } finally {
+      setSending(false)
+    }
+  }
+
   const cardStyle = {
     background: '#fff',
     borderRadius: 10,
@@ -108,6 +201,56 @@ export default function Huehnerklappe() {
     opacity: sending ? 0.6 : 1,
     transition: 'opacity 0.2s',
   })
+
+  const ghostBtnStyle = {
+    padding: '8px 14px',
+    borderRadius: 10,
+    border: '1px solid #c7d2fe',
+    background: '#eef2ff',
+    color: '#3730a3',
+    fontWeight: 700,
+    fontSize: 13,
+    cursor: sending ? 'wait' : 'pointer',
+    opacity: sending ? 0.6 : 1,
+  }
+
+  const removeBtnStyle = {
+    padding: '8px 12px',
+    borderRadius: 10,
+    border: '1px solid #fecaca',
+    background: '#fff1f2',
+    color: '#be123c',
+    fontWeight: 800,
+    fontSize: 13,
+    cursor: sending ? 'wait' : 'pointer',
+    opacity: sending ? 0.6 : 1,
+    minWidth: 34,
+  }
+
+  const selectedTheme = {
+    card: {
+      marginTop: 20,
+      borderTop: '1px solid #e5e7eb',
+      background: '#ffffff',
+      borderRadius: 12,
+      border: '1px solid #e5e7eb',
+      padding: 16,
+    },
+    titleColor: '#1f2937',
+    subtitleColor: '#6b7280',
+    labelColor: '#374151',
+    rowBg: '#f9fafb',
+    rowBorder: '#e5e7eb',
+    inputBg: '#ffffff',
+    inputBorder: '#d1d5db',
+    addBg: '#f3f4f6',
+    addBorder: '#d1d5db',
+    addColor: '#374151',
+    removeBg: '#fff1f2',
+    removeBorder: '#fecaca',
+    removeColor: '#be123c',
+    sendColor: '#047857',
+  }
 
   return (
     <div style={{ maxWidth: 700, margin: '0 auto' }}>
@@ -206,6 +349,165 @@ export default function Huehnerklappe() {
           >
             Bis Uhrzeit schlafen lassen
           </button>
+        </div>
+
+        <div style={selectedTheme.card}>
+          <h4 style={{ marginTop: 0, marginBottom: 8, color: selectedTheme.titleColor, fontSize: 18 }}>Sleep-Schedule per Timestamps</h4>
+          <p style={{ marginTop: 0, marginBottom: 14, color: selectedTheme.subtitleColor, fontSize: 13 }}>
+            Zeiten werden in Reihenfolge gespeichert und nacheinander abgearbeitet.
+          </p>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+            <div style={{ fontSize: 14, color: selectedTheme.labelColor, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontWeight: 700 }}>Anzahl Timestamps: {scheduleTimestamps.length}</span>
+              <button
+                type="button"
+                onClick={addScheduleTimestamp}
+                disabled={sending || scheduleTimestamps.length >= 20}
+                style={{
+                  ...ghostBtnStyle,
+                  background: selectedTheme.addBg,
+                  border: `1px solid ${selectedTheme.addBorder}`,
+                  color: selectedTheme.addColor,
+                }}
+              >
+                + Hinzufuegen
+              </button>
+            </div>
+            <label style={{ fontSize: 14, color: selectedTheme.labelColor, fontWeight: 600 }}>
+              Wachzeit bis nächster Sleep (Sekunden):
+              <input
+                type="number"
+                min={0}
+                max={86400}
+                value={awakeSeconds}
+                onChange={e => setAwakeSeconds(Math.max(0, Number(e.target.value) || 0))}
+                style={{ marginLeft: 8, padding: '8px 10px', borderRadius: 10, border: `1px solid ${selectedTheme.inputBorder}`, width: 100, background: selectedTheme.inputBg, color: selectedTheme.labelColor }}
+              />
+            </label>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {scheduleTimestamps.map((timestamp, index) => (
+              <div key={index} style={{
+                fontSize: 14,
+                color: selectedTheme.labelColor,
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 10,
+                background: selectedTheme.rowBg,
+                border: `1px solid ${selectedTheme.rowBorder}`,
+                borderRadius: 12,
+                padding: '10px 12px',
+                position: 'relative',
+              }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, flexWrap: 'wrap' }}>
+                    <span style={{ minWidth: 92 }}>Timestamp {index + 1}:</span>
+                    <button
+                      type="button"
+                      onClick={() => openTimestampPicker(index)}
+                      style={{
+                        padding: '8px 10px',
+                        borderRadius: 10,
+                        border: `1px solid ${selectedTheme.inputBorder}`,
+                        background: selectedTheme.inputBg,
+                        color: selectedTheme.labelColor,
+                        minWidth: 120,
+                        textAlign: 'left',
+                        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace',
+                      }}
+                    >
+                      {timestamp}
+                    </button>
+                  </label>
+
+                  {pickerIndex === index && (
+                    <div style={{
+                      border: `1px solid ${selectedTheme.inputBorder}`,
+                      borderRadius: 10,
+                      background: selectedTheme.rowBg,
+                      padding: 10,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 10,
+                      boxShadow: '0 8px 22px rgba(2, 6, 23, 0.15)',
+                      maxWidth: 360,
+                    }}>
+                      <div style={{ fontWeight: 700, fontSize: 12, opacity: 0.85 }}>Zeit auswählen</div>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <select
+                          value={pickerDraft.hour}
+                          onChange={(e) => setPickerDraft(prev => ({ ...prev, hour: e.target.value }))}
+                          style={{ padding: '7px 8px', borderRadius: 8, border: `1px solid ${selectedTheme.inputBorder}`, background: selectedTheme.inputBg, color: selectedTheme.labelColor }}
+                        >
+                          {Array.from({ length: 24 }, (_, i) => pad2(i)).map((h) => (
+                            <option key={h} value={h}>{h}</option>
+                          ))}
+                        </select>
+                        <span>:</span>
+                        <select
+                          value={pickerDraft.minute}
+                          onChange={(e) => setPickerDraft(prev => ({ ...prev, minute: e.target.value }))}
+                          style={{ padding: '7px 8px', borderRadius: 8, border: `1px solid ${selectedTheme.inputBorder}`, background: selectedTheme.inputBg, color: selectedTheme.labelColor }}
+                        >
+                          {Array.from({ length: 60 }, (_, i) => pad2(i)).map((m) => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                        </select>
+                        <span>:</span>
+                        <select
+                          value={pickerDraft.second}
+                          onChange={(e) => setPickerDraft(prev => ({ ...prev, second: e.target.value }))}
+                          style={{ padding: '7px 8px', borderRadius: 8, border: `1px solid ${selectedTheme.inputBorder}`, background: selectedTheme.inputBg, color: selectedTheme.labelColor }}
+                        >
+                          {Array.from({ length: 60 }, (_, i) => pad2(i)).map((s) => (
+                            <option key={s} value={s}>{s}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button
+                          type="button"
+                          onClick={applyTimestampPicker}
+                          style={{ ...ghostBtnStyle, background: selectedTheme.addBg, border: `1px solid ${selectedTheme.addBorder}`, color: selectedTheme.addColor }}
+                        >
+                          Uebernehmen
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPickerIndex(null)}
+                          style={{ ...removeBtnStyle, background: '#f4f4f5', border: '1px solid #d4d4d8', color: '#3f3f46' }}
+                        >
+                          Abbrechen
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => removeScheduleTimestamp(index)}
+                  disabled={sending || scheduleTimestamps.length <= 1}
+                  style={{
+                    ...removeBtnStyle,
+                    background: selectedTheme.removeBg,
+                    border: `1px solid ${selectedTheme.removeBorder}`,
+                    color: selectedTheme.removeColor,
+                  }}
+                >
+                  Entfernen
+                </button>
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: 12 }}>
+            <button
+              style={btnStyle(selectedTheme.sendColor)}
+              disabled={sending}
+              onClick={sendSleepSchedule}
+            >
+              Timestamp-Schedule senden
+            </button>
+          </div>
         </div>
       </div>
     </div>
