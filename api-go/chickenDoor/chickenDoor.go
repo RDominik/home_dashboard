@@ -15,8 +15,6 @@ import (
 
 const nanoSetPrefix = "nano/esp32"
 
-var statusTimeLocation = mustLoadLocation("Europe/Berlin")
-
 var allowedSetKeys = map[string]bool{
 	"engine":       true,
 	"engine/sleep": true,
@@ -34,19 +32,27 @@ type sleepScheduleRequest struct {
 }
 
 type StatusResponse struct {
-	Position        string `json:"position"`
-	LastAction      string `json:"lastAction"`
-	Error           string `json:"error,omitempty"`
-	Battery         int    `json:"battery"`
-	WakeReason      string `json:"wakeReason"`
-	ControllerState string `json:"controllerState"`
-	SleepState      string `json:"sleepState"`
-	IP              string `json:"ip"`
-	Charging        string `json:"charging"`
-	SleepCommandAt  string `json:"sleepCommandAt,omitempty"`
-	SleepingAt      string `json:"sleepingAt,omitempty"`
-	OnlineAt        string `json:"onlineAt,omitempty"`
-	WakeDeltaMs     int64  `json:"wakeDeltaMs,omitempty"`
+	Position         string `json:"position"`
+	LastAction       string `json:"lastAction"`
+	Error            string `json:"error,omitempty"`
+	Battery          int    `json:"battery"`
+	WakeReason       string `json:"wakeReason"`
+	ControllerState  string `json:"controllerState"`
+	SleepState       string `json:"sleepState"`
+	IP               string `json:"ip"`
+	Charging         string `json:"charging"`
+	ServerNowMs      int64  `json:"serverNowMs"`
+	SleepCommandAtMs int64  `json:"sleepCommandAtMs,omitempty"`
+	SleepingAtMs     int64  `json:"sleepingAtMs,omitempty"`
+	OnlineAtMs       int64  `json:"onlineAtMs,omitempty"`
+	WakeDeltaMs      int64  `json:"wakeDeltaMs,omitempty"`
+}
+
+func unixMillisOrZero(ts time.Time) int64 {
+	if ts.IsZero() {
+		return 0
+	}
+	return ts.UnixMilli()
 }
 
 type APIHandler struct {
@@ -65,14 +71,6 @@ type APIHandler struct {
 
 func NewAPIHandler(mqttManager *mqtt.Manager) *APIHandler {
 	return &APIHandler{mqttManager: mqttManager}
-}
-
-func mustLoadLocation(name string) *time.Location {
-	loc, err := time.LoadLocation(name)
-	if err != nil {
-		return time.Local
-	}
-	return loc
 }
 
 func toString(value any) string {
@@ -104,13 +102,6 @@ func toInt(value any) int {
 		}
 	}
 	return 0
-}
-
-func formatSecondTimestamp(ts time.Time) string {
-	if ts.IsZero() {
-		return ""
-	}
-	return ts.In(statusTimeLocation).Format("2006-01-02 15:04:05")
 }
 
 func normalizeControllerState(state string) string {
@@ -175,18 +166,19 @@ func (h *APIHandler) StatusHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	status := StatusResponse{
-		Position:        position,
-		LastAction:      toString(msgs["engine_set"]),
-		Battery:         battery,
-		WakeReason:      wakeReason,
-		ControllerState: controllerState,
-		SleepState:      sleepState,
-		IP:              ip,
-		Charging:        charging,
-		SleepCommandAt:  formatSecondTimestamp(h.lastSleepCommandAt),
-		SleepingAt:      formatSecondTimestamp(h.sleepingAt),
-		OnlineAt:        formatSecondTimestamp(h.onlineAt),
-		WakeDeltaMs:     h.wakeDeltaMs,
+		Position:         position,
+		LastAction:       toString(msgs["engine_set"]),
+		Battery:          battery,
+		WakeReason:       wakeReason,
+		ControllerState:  controllerState,
+		SleepState:       sleepState,
+		IP:               ip,
+		Charging:         charging,
+		ServerNowMs:      time.Now().UnixMilli(),
+		SleepCommandAtMs: unixMillisOrZero(h.lastSleepCommandAt),
+		SleepingAtMs:     unixMillisOrZero(h.sleepingAt),
+		OnlineAtMs:       unixMillisOrZero(h.onlineAt),
+		WakeDeltaMs:      h.wakeDeltaMs,
 	}
 	h.mu.Unlock()
 
