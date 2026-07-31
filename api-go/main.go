@@ -100,6 +100,12 @@ func main() {
 	defer restService.Stop()
 	log.Println("📡 REST service started from main")
 
+	// ChickenDoor background service
+	chickenDoorService := chickendoorpkg.New()
+	chickenDoorService.Run()
+	defer chickenDoorService.Stop()
+	log.Println("🐔 ChickenDoor service started from main")
+
 	// Router
 	mux := http.NewServeMux()
 	chickenDoorHandler := chickendoorpkg.NewAPIHandler(mqttManager)
