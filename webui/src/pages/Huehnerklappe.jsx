@@ -5,6 +5,7 @@ const API = '/api/huehnerklappe'
 export default function Huehnerklappe() {
     const [sleepTime, setSleepTime] = useState(60) // default 60 Sekunden
   const [sleepUntil, setSleepUntil] = useState('')
+  const [controlMode, setControlMode] = useState('manual')
   const [scheduleTimestamps, setScheduleTimestamps] = useState(['06:30:00', '12:00:00', '18:30:00'])
   const [awakeSeconds, setAwakeSeconds] = useState(30)
   const [pickerIndex, setPickerIndex] = useState(null)
@@ -101,6 +102,9 @@ export default function Huehnerklappe() {
     setScheduleTimestamps(prev => {
       const next = [...prev]
       next[index] = value
+      if (controlMode === 'schedule') {
+        void sendSleepSchedule(next, true, true)
+      }
       return next
     })
   }
@@ -110,7 +114,11 @@ export default function Huehnerklappe() {
       if (prev.length >= 20) {
         return prev
       }
-      return [...prev, '00:00:00']
+      const next = [...prev, '00:00:00']
+      if (controlMode === 'schedule') {
+        void sendSleepSchedule(next, true, true)
+      }
+      return next
     })
   }
 
@@ -119,7 +127,11 @@ export default function Huehnerklappe() {
       if (prev.length <= 1) {
         return prev
       }
-      return prev.filter((_, i) => i !== index)
+      const next = prev.filter((_, i) => i !== index)
+      if (controlMode === 'schedule') {
+        void sendSleepSchedule(next, true, true)
+      }
+      return next
     })
   }
 
@@ -150,15 +162,19 @@ export default function Huehnerklappe() {
     setPickerIndex(null)
   }
 
-  const sendSleepSchedule = async () => {
-    const timestamps = scheduleTimestamps.map(v => v.trim())
+  const sendSleepSchedule = async (sourceTimestamps = scheduleTimestamps, silent = false, active = controlMode === 'schedule') => {
+    const timestamps = sourceTimestamps.map(v => v.trim())
     if (timestamps.some(v => !v)) {
-      setFeedback({ type: 'error', msg: '❌ Bitte alle Timestamp-Felder ausfüllen.' })
+      if (!silent) {
+        setFeedback({ type: 'error', msg: '❌ Bitte alle Timestamp-Felder ausfüllen.' })
+      }
       return
     }
 
     setSending(true)
-    setFeedback(null)
+    if (!silent) {
+      setFeedback(null)
+    }
     try {
       const r = await fetch(`${API}/sleep-schedule`, {
         method: 'PUT',
@@ -167,23 +183,38 @@ export default function Huehnerklappe() {
           count: timestamps.length,
           timestamps,
           awakeSeconds,
+          active,
         }),
       })
       const data = await r.json()
       if (data.ok) {
-        if (data.stored) {
+        if (!silent && data.stored) {
           setFeedback({ type: 'success', msg: `✅ ${timestamps.length} Timestamps gespeichert (wach: ${awakeSeconds}s)` })
-        } else {
+        } else if (!silent) {
           setFeedback({ type: 'success', msg: `✅ ${timestamps.length} Timestamps gesendet (wach: ${awakeSeconds}s)` })
         }
       } else {
-        setFeedback({ type: 'error', msg: `❌ ${data.error}` })
+        if (!silent) {
+          setFeedback({ type: 'error', msg: `❌ ${data.error}` })
+        }
       }
     } catch (err) {
-      setFeedback({ type: 'error', msg: `❌ Fehler: ${err.message}` })
+      if (!silent) {
+        setFeedback({ type: 'error', msg: `❌ Fehler: ${err.message}` })
+      }
     } finally {
       setSending(false)
     }
+  }
+
+  const activateManualMode = async () => {
+    setControlMode('manual')
+    await sendSleepSchedule(scheduleTimestamps, false, false)
+  }
+
+  const activateScheduleMode = async () => {
+    setControlMode('schedule')
+    await sendSleepSchedule(scheduleTimestamps, false, true)
   }
 
   const cardStyle = {
@@ -256,6 +287,24 @@ export default function Huehnerklappe() {
     sendColor: '#047857',
   }
 
+  const modeSwitchButton = (mode) => ({
+    padding: '8px 14px',
+    borderRadius: 999,
+    border: controlMode === mode ? '1px solid #047857' : '1px solid #d1d5db',
+    background: controlMode === mode ? '#ecfdf5' : '#ffffff',
+    color: controlMode === mode ? '#047857' : '#374151',
+    fontWeight: 700,
+    fontSize: 13,
+    cursor: sending ? 'wait' : 'pointer',
+    opacity: sending ? 0.6 : 1,
+  })
+
+  const sectionStateStyle = (isActive) => ({
+    opacity: isActive ? 1 : 0.45,
+    filter: isActive ? 'none' : 'grayscale(0.3)',
+    pointerEvents: isActive ? 'auto' : 'none',
+  })
+
   const formatStatusTimestamp = (unixMs) => {
     if (Number.isFinite(unixMs) && unixMs > 0) {
       const correctedMs = unixMs + clockOffsetMs
@@ -320,6 +369,17 @@ export default function Huehnerklappe() {
       {/* Steuerung */}
       <div style={{ ...cardStyle }}>
         <h3 style={{ marginTop: 0, color: '#374151' }}>🔧 Klappe steuern</h3>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+          <button type="button" style={modeSwitchButton('manual')} onClick={activateManualMode} disabled={sending}>
+            Manuelle Steuerung aktiv
+          </button>
+          <button type="button" style={modeSwitchButton('schedule')} onClick={activateScheduleMode} disabled={sending}>
+            Sleep-Schedule aktiv
+          </button>
+        </div>
+
+        <div style={sectionStateStyle(controlMode === 'manual')}>
+          <h4 style={{ marginTop: 0, marginBottom: 10, color: '#374151' }}>Manuelle Steuerung</h4>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <button style={btnStyle('#10b981')} disabled={sending} onClick={() => sendCommand('engine','open')}>
             Öffnen
@@ -370,8 +430,9 @@ export default function Huehnerklappe() {
             Bis Uhrzeit schlafen lassen
           </button>
         </div>
+        </div>
 
-        <div style={selectedTheme.card}>
+        <div style={{ ...selectedTheme.card, ...sectionStateStyle(controlMode === 'schedule') }}>
           <h4 style={{ marginTop: 0, marginBottom: 8, color: selectedTheme.titleColor, fontSize: 18 }}>Sleep-Schedule per Timestamps</h4>
           <p style={{ marginTop: 0, marginBottom: 14, color: selectedTheme.subtitleColor, fontSize: 13 }}>
             Zeiten werden in Reihenfolge gespeichert und nacheinander abgearbeitet.
