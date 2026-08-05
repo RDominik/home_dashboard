@@ -29,6 +29,7 @@ type sleepScheduleRequest struct {
 	Count        int      `json:"count"`
 	Timestamps   []string `json:"timestamps"`
 	AwakeSeconds int      `json:"awakeSeconds"`
+	Active       bool     `json:"active"`
 }
 
 type StatusResponse struct {
@@ -41,6 +42,7 @@ type StatusResponse struct {
 	SleepState       string `json:"sleepState"`
 	IP               string `json:"ip"`
 	Charging         string `json:"charging"`
+	ScheduleActive   bool   `json:"scheduleActive"`
 	ServerNowMs      int64  `json:"serverNowMs"`
 	SleepCommandAtMs int64  `json:"sleepCommandAtMs,omitempty"`
 	SleepingAtMs     int64  `json:"sleepingAtMs,omitempty"`
@@ -67,6 +69,7 @@ type APIHandler struct {
 
 	scheduleAwakeSeconds int
 	scheduleTimestamps   []string
+	scheduleActive       bool
 }
 
 func NewAPIHandler(mqttManager *mqtt.Manager) *APIHandler {
@@ -174,6 +177,7 @@ func (h *APIHandler) StatusHandler(w http.ResponseWriter, r *http.Request) {
 		SleepState:       sleepState,
 		IP:               ip,
 		Charging:         charging,
+		ScheduleActive:   h.scheduleActive,
 		ServerNowMs:      time.Now().UnixMilli(),
 		SleepCommandAtMs: unixMillisOrZero(h.lastSleepCommandAt),
 		SleepingAtMs:     unixMillisOrZero(h.sleepingAt),
@@ -224,6 +228,9 @@ func (h *APIHandler) SetHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	topic := fmt.Sprintf("%s/%s/set", nanoSetPrefix, req.Key)
+	if req.Key == "engine" {
+		topic = fmt.Sprintf("%s/engine", nanoSetPrefix)
+	}
 	payload := req.Value
 	if req.Key == "engine/sleep" {
 		topic = fmt.Sprintf("%s/sleepms", nanoSetPrefix)
@@ -295,6 +302,7 @@ func (h *APIHandler) SleepScheduleHandler(w http.ResponseWriter, r *http.Request
 	h.mu.Lock()
 	h.scheduleAwakeSeconds = req.AwakeSeconds
 	h.scheduleTimestamps = append([]string(nil), cleanedTimestamps...)
+	h.scheduleActive = req.Active
 	h.mu.Unlock()
 
 	jsonResponse(w, map[string]any{
@@ -303,6 +311,7 @@ func (h *APIHandler) SleepScheduleHandler(w http.ResponseWriter, r *http.Request
 		"count":        req.Count,
 		"timestamps":   cleanedTimestamps,
 		"awakeSeconds": req.AwakeSeconds,
+		"active":       req.Active,
 	})
 }
 
