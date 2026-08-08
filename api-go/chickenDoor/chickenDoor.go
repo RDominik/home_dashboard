@@ -19,6 +19,7 @@ import (
 const nanoSetPrefix = "nano/esp32"
 
 const scheduleWakeDelay = 10 * time.Second
+const scheduleRetryDelay = 5 * time.Second
 const scheduleHistorySize = 20
 const defaultScheduleTimezone = "Europe/Berlin"
 
@@ -208,21 +209,22 @@ func nextScheduleTimestamp(now time.Time, timestamps []string) (time.Time, error
 // The method atomically reads the current schedule, computes remaining time,
 // publishes milliseconds to nano/esp32/sleepms, and updates lastSleepCommandAt.
 // @param reason Context label for logging.
-func (h *ChickenDoor) scheduleSleepUntilNext(reason string) {
+// @return true when a sleep command was published successfully, otherwise false.
+func (h *ChickenDoor) scheduleSleepUntilNext(reason string) bool {
 	h.mu.Lock()
 	active := h.scheduleActive
 	timestamps := append([]string(nil), h.scheduleTimestamps...)
 	h.mu.Unlock()
 
 	if !active || len(timestamps) == 0 {
-		return
+		return false
 	}
 
 	now := scheduleNow()
 	nextTs, err := nextScheduleTimestamp(now, timestamps)
 	if err != nil {
 		log.Printf("[chickendoor-schedule] next timestamp error (%s): %v", reason, err)
-		return
+		return false
 	}
 
 	duration := nextTs.Sub(now)
@@ -248,7 +250,7 @@ func (h *ChickenDoor) scheduleSleepUntilNext(reason string) {
 
 	if err := h.mqttManager.Publish(fmt.Sprintf("%s/sleepms", nanoSetPrefix), payloadMs); err != nil {
 		log.Printf("[chickendoor-schedule] publish sleep failed (%s): %v", reason, err)
-		return
+		return false
 	}
 
 	h.mu.Lock()
@@ -264,6 +266,7 @@ func (h *ChickenDoor) scheduleSleepUntilNext(reason string) {
 	h.mu.Unlock()
 
 	log.Printf("[chickendoor-schedule] sleep sent (%s): %ds until %s", reason, sleepSeconds, nextTs.Format("15:04:05"))
+	return true
 }
 
 // @brief Updates transition state and timestamps for sleeping/online changes.
@@ -318,6 +321,10 @@ func (h *ChickenDoor) updateStateTracking(controllerState, sleepState string, st
 //
 // Reads MQTT states, updates transition tracking, and triggers the next sleep
 // cycle after scheduleWakeAt has elapsed.
+//
+// Scheduling is blocked only while the controller is explicitly sleeping or
+// offline. Unknown/non-standard awake states are treated as schedulable so the
+// schedule still works with differing firmware status strings.
 func (h *ChickenDoor) scheduleTick() {
 	msgs := h.mqttManager.Messages()
 	controllerState := toString(msgs["status"])
@@ -340,7 +347,10 @@ func (h *ChickenDoor) scheduleTick() {
 	if currentState == "" {
 		currentState = normalizeControllerState(sleepState)
 	}
-	if currentState != "online" || time.Now().Before(wakeAt) {
+	if time.Now().Before(wakeAt) {
+		return
+	}
+	if currentState == "sleeping" || currentState == "offline" {
 		return
 	}
 
@@ -352,7 +362,14 @@ func (h *ChickenDoor) scheduleTick() {
 	h.mu.Unlock()
 
 	if shouldSchedule {
-		h.scheduleSleepUntilNext("post-online-delay")
+		if ok := h.scheduleSleepUntilNext("post-online-delay"); !ok {
+			h.mu.Lock()
+			if h.scheduleActive {
+				h.scheduleWakeAt = time.Now().Add(scheduleRetryDelay)
+			}
+			h.mu.Unlock()
+			log.Printf("[chickendoor-schedule] retry armed in %s", scheduleRetryDelay)
+		}
 	}
 }
 

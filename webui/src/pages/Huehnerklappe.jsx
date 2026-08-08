@@ -366,6 +366,7 @@ export default function Huehnerklappe() {
             <StatusItem label="Controller" value={status.controllerState ?? '—'} />
             <StatusItem label="Sleep-Status" value={status.sleepState ?? '—'} />
             <StatusItem label="Weckgrund" value={wakeReason ?? '—'} />
+            <StatusItem label="Schedule aktiv" value={status.scheduleActive ? 'ja' : 'nein'} />
             <StatusItem label="Schedule-Zeitzone" value={status.scheduleTimezone ?? '—'} />
             <StatusItem label="Sleep gesendet" value={formatStatusTimestamp(status.sleepCommandAtMs)} />
             <StatusItem label="Sleeping seit" value={formatStatusTimestamp(status.sleepingAtMs)} />
