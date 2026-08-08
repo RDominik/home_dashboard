@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react'
 
 const API = '/api/huehnerklappe'
+const UI_STATE_KEY = 'huehnerklappe.ui.v1'
 
 export default function Huehnerklappe() {
-    const [sleepTime, setSleepTime] = useState(60) // default 60 Sekunden
+  const [sleepTime, setSleepTime] = useState(60) // default 60 Sekunden
   const [sleepUntil, setSleepUntil] = useState('')
   const [controlMode, setControlMode] = useState('manual')
   const [scheduleTimestamps, setScheduleTimestamps] = useState(['06:30:00', '12:00:00', '18:30:00'])
@@ -18,6 +19,7 @@ export default function Huehnerklappe() {
   const [wakeReason, setWakeReason] = useState(null)
   const [charging, setCharging] = useState(null)
   const [clockOffsetMs, setClockOffsetMs] = useState(0)
+  const [uiHydrated, setUiHydrated] = useState(false)
 
   // Status laden
   const loadStatus = async () => {
@@ -37,10 +39,66 @@ export default function Huehnerklappe() {
   }
 
   useEffect(() => {
+    try {
+      const raw = localStorage.getItem(UI_STATE_KEY)
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (Number.isFinite(parsed.sleepTime)) {
+          setSleepTime(Math.max(1, Math.min(86400, Number(parsed.sleepTime))))
+        }
+        if (typeof parsed.sleepUntil === 'string') {
+          setSleepUntil(parsed.sleepUntil)
+        }
+        if (parsed.controlMode === 'manual' || parsed.controlMode === 'schedule') {
+          setControlMode(parsed.controlMode)
+        }
+        if (Array.isArray(parsed.scheduleTimestamps)) {
+          const cleaned = parsed.scheduleTimestamps
+            .map(v => String(v).trim())
+            .filter(Boolean)
+            .slice(0, 20)
+          if (cleaned.length > 0) {
+            setScheduleTimestamps(cleaned)
+          }
+        }
+        if (Number.isFinite(parsed.awakeSeconds)) {
+          setAwakeSeconds(Math.max(0, Math.min(86400, Number(parsed.awakeSeconds))))
+        }
+        if (typeof parsed.historyExpanded === 'boolean') {
+          setHistoryExpanded(parsed.historyExpanded)
+        }
+      }
+    } catch {
+      // Ignore invalid local UI state and keep defaults.
+    }
+
+    setUiHydrated(true)
+
     loadStatus()
     const t = setInterval(loadStatus, 5000)
     return () => clearInterval(t)
   }, [])
+
+  useEffect(() => {
+    if (!uiHydrated) {
+      return
+    }
+
+    const payload = {
+      sleepTime,
+      sleepUntil,
+      controlMode,
+      scheduleTimestamps,
+      awakeSeconds,
+      historyExpanded,
+    }
+
+    try {
+      localStorage.setItem(UI_STATE_KEY, JSON.stringify(payload))
+    } catch {
+      // Ignore persistence errors (e.g. private mode quota).
+    }
+  }, [uiHydrated, sleepTime, sleepUntil, controlMode, scheduleTimestamps, awakeSeconds, historyExpanded])
 
   // Befehl senden
   const sendCommand = async (key, value = null, successMessage = null) => {
