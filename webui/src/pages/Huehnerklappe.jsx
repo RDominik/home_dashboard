@@ -242,6 +242,7 @@ export default function Huehnerklappe() {
         } else if (!silent) {
           setFeedback({ type: 'success', msg: `✅ ${timestamps.length} Timestamps gesendet (wach: ${awakeSeconds}s)` })
         }
+        setTimeout(loadStatus, 500)
       } else {
         if (!silent) {
           setFeedback({ type: 'error', msg: `❌ ${data.error}` })
@@ -256,8 +257,9 @@ export default function Huehnerklappe() {
     }
   }
 
-  const activateManualMode = () => {
+  const activateManualMode = async () => {
     setControlMode('manual')
+    await sendSleepSchedule(scheduleTimestamps, false, false)
   }
 
   const activateScheduleMode = () => {
@@ -450,7 +452,7 @@ export default function Huehnerklappe() {
           </button>
         </div>
           <p style={{ marginTop: -6, marginBottom: 12, color: '#6b7280', fontSize: 12 }}>
-            Modus-Wechsel wird erst mit "Timestamp-Schedule senden" an den Server uebernommen.
+            Wechsel auf "Manuell" deaktiviert sofort. Aktivierung erfolgt erst mit "Timestamp-Schedule senden".
           </p>
 
         <div style={sectionStateStyle(controlMode === 'manual')}>
@@ -659,7 +661,7 @@ export default function Huehnerklappe() {
             <button
               style={btnStyle(selectedTheme.sendColor)}
               disabled={sending}
-              onClick={() => sendSleepSchedule()}
+              onClick={() => sendSleepSchedule(scheduleTimestamps, false, true)}
             >
               Timestamp-Schedule senden
             </button>
