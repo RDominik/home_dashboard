@@ -16,8 +16,10 @@ RUN go mod tidy && CGO_ENABLED=0 go build -o /app/server .
 FROM alpine:3.19
 
 # git + Docker CLI für System-Update
-RUN apk add --no-cache git docker-cli docker-cli-compose ca-certificates && \
+RUN apk add --no-cache git docker-cli docker-cli-compose ca-certificates tzdata && \
     git config --global --add safe.directory /repo
+
+ENV TZ=Europe/Berlin
 
 WORKDIR /app
 COPY --from=builder /app/server .
