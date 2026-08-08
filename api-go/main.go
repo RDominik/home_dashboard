@@ -116,9 +116,7 @@ func main() {
 	mux.HandleFunc("/api/wallbox/history", wb.History)
 
 	// Hühnerklappe
-	mux.HandleFunc("/api/huehnerklappe/status", chickenDoorService.StatusHandler)
-	mux.HandleFunc("/api/huehnerklappe/set", chickenDoorService.SetHandler)
-	mux.HandleFunc("/api/huehnerklappe/", chickenDoorService.SleepScheduleHandler)
+	mux.HandleFunc("/api/huehnerklappe/", chickenDoorService.APIHandler)
 
 	// Inverter
 	mux.HandleFunc("/api/inverter/summary", inverterSummary)

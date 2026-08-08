@@ -378,6 +378,29 @@ func jsonError(w http.ResponseWriter, code int, msg string) {
 	json.NewEncoder(w).Encode(map[string]any{"error": msg})
 }
 
+// @brief Central API entry point for all /api/huehnerklappe/* routes.
+//
+// Dispatches requests to the specialized handlers based on URL path.
+// Supported paths:
+// - /api/huehnerklappe/status
+// - /api/huehnerklappe/set
+// - /api/huehnerklappe/sleep-schedule
+// - /api/huehnerklappe/ (backward-compatible alias for sleep-schedule)
+// @param w HTTP response writer.
+// @param r HTTP request.
+func (h *ChickenDoor) APIHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.URL.Path {
+	case "/api/huehnerklappe/status":
+		h.StatusHandler(w, r)
+	case "/api/huehnerklappe/set":
+		h.SetHandler(w, r)
+	case "/api/huehnerklappe/sleep-schedule", "/api/huehnerklappe/":
+		h.SleepScheduleHandler(w, r)
+	default:
+		jsonError(w, http.StatusNotFound, "unknown huehnerklappe endpoint")
+	}
+}
+
 // @brief Returns the current ChickenDoor status as JSON.
 //
 // Reads MQTT values including sleep/wakeup info, updates internal transition
