@@ -7,6 +7,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -18,6 +19,15 @@ import (
 const nanoSetPrefix = "nano/esp32"
 
 const scheduleWakeDelay = 10 * time.Second
+const scheduleHistorySize = 20
+const defaultScheduleTimezone = "Europe/Berlin"
+
+var scheduleLocation = struct {
+	once sync.Once
+	loc  *time.Location
+}{
+	loc: time.Local,
+}
 
 var allowedSetKeys = map[string]bool{
 	"engine":       true,
@@ -37,21 +47,30 @@ type sleepScheduleRequest struct {
 }
 
 type StatusResponse struct {
-	Position         string `json:"position"`
-	LastAction       string `json:"lastAction"`
-	Error            string `json:"error,omitempty"`
-	Battery          int    `json:"battery"`
-	WakeReason       string `json:"wakeReason"`
-	ControllerState  string `json:"controllerState"`
-	SleepState       string `json:"sleepState"`
-	IP               string `json:"ip"`
-	Charging         string `json:"charging"`
-	ScheduleActive   bool   `json:"scheduleActive"`
-	ServerNowMs      int64  `json:"serverNowMs"`
-	SleepCommandAtMs int64  `json:"sleepCommandAtMs,omitempty"`
-	SleepingAtMs     int64  `json:"sleepingAtMs,omitempty"`
-	OnlineAtMs       int64  `json:"onlineAtMs,omitempty"`
-	WakeDeltaMs      int64  `json:"wakeDeltaMs,omitempty"`
+	Position         string                 `json:"position"`
+	LastAction       string                 `json:"lastAction"`
+	Error            string                 `json:"error,omitempty"`
+	Battery          int                    `json:"battery"`
+	WakeReason       string                 `json:"wakeReason"`
+	ControllerState  string                 `json:"controllerState"`
+	SleepState       string                 `json:"sleepState"`
+	IP               string                 `json:"ip"`
+	Charging         string                 `json:"charging"`
+	ScheduleActive   bool                   `json:"scheduleActive"`
+	ScheduleTimezone string                 `json:"scheduleTimezone"`
+	ServerNowMs      int64                  `json:"serverNowMs"`
+	SleepCommandAtMs int64                  `json:"sleepCommandAtMs,omitempty"`
+	SleepingAtMs     int64                  `json:"sleepingAtMs,omitempty"`
+	OnlineAtMs       int64                  `json:"onlineAtMs,omitempty"`
+	WakeDeltaMs      int64                  `json:"wakeDeltaMs,omitempty"`
+	ScheduleHistory  []ScheduleHistoryEntry `json:"scheduleHistory,omitempty"`
+}
+
+type ScheduleHistoryEntry struct {
+	SleepSeconds     int   `json:"sleepSeconds"`
+	SleepCommandAtMs int64 `json:"sleepCommandAtMs,omitempty"`
+	SleepingAtMs     int64 `json:"sleepingAtMs,omitempty"`
+	WokeUpAtMs       int64 `json:"wokeUpAtMs,omitempty"`
 }
 
 // @brief Converts a timestamp to Unix milliseconds.
@@ -62,6 +81,34 @@ func unixMillisOrZero(ts time.Time) int64 {
 		return 0
 	}
 	return ts.UnixMilli()
+}
+
+// @brief Returns the schedule clock time in configured timezone.
+//
+// Resolution order for timezone: SCHEDULE_TIMEZONE -> TZ -> Europe/Berlin.
+// Falls back to time.Local if loading the requested zone fails.
+// @return Current time in schedule timezone.
+func scheduleNow() time.Time {
+	scheduleLocation.once.Do(func() {
+		tzName := strings.TrimSpace(os.Getenv("SCHEDULE_TIMEZONE"))
+		if tzName == "" {
+			tzName = strings.TrimSpace(os.Getenv("TZ"))
+		}
+		if tzName == "" {
+			tzName = defaultScheduleTimezone
+		}
+
+		loc, err := time.LoadLocation(tzName)
+		if err != nil {
+			log.Printf("[chickendoor-schedule] timezone load failed (%s): %v; fallback to local (%s)", tzName, err, time.Local.String())
+			return
+		}
+
+		scheduleLocation.loc = loc
+		log.Printf("[chickendoor-schedule] timezone set to %s", scheduleLocation.loc.String())
+	})
+
+	return time.Now().In(scheduleLocation.loc)
 }
 
 type ChickenDoor struct {
@@ -78,6 +125,7 @@ type ChickenDoor struct {
 	scheduleTimestamps   []string
 	scheduleActive       bool
 	scheduleWakeAt       time.Time
+	scheduleHistory      []ScheduleHistoryEntry
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -170,7 +218,7 @@ func (h *ChickenDoor) scheduleSleepUntilNext(reason string) {
 		return
 	}
 
-	now := time.Now()
+	now := scheduleNow()
 	nextTs, err := nextScheduleTimestamp(now, timestamps)
 	if err != nil {
 		log.Printf("[chickendoor-schedule] next timestamp error (%s): %v", reason, err)
@@ -188,13 +236,31 @@ func (h *ChickenDoor) scheduleSleepUntilNext(reason string) {
 	}
 	payloadMs := sleepSeconds * 1000
 
+	log.Printf(
+		"[chickendoor-schedule] calculation (%s): now=%s next=%s duration=%s sleepSeconds=%d payloadMs=%d",
+		reason,
+		now.Format(time.RFC3339),
+		nextTs.Format(time.RFC3339),
+		duration.Round(time.Second),
+		sleepSeconds,
+		payloadMs,
+	)
+
 	if err := h.mqttManager.Publish(fmt.Sprintf("%s/sleepms", nanoSetPrefix), payloadMs); err != nil {
 		log.Printf("[chickendoor-schedule] publish sleep failed (%s): %v", reason, err)
 		return
 	}
 
 	h.mu.Lock()
-	h.lastSleepCommandAt = time.Now()
+	nowTs := time.Now()
+	h.lastSleepCommandAt = nowTs
+	h.scheduleHistory = append(h.scheduleHistory, ScheduleHistoryEntry{
+		SleepSeconds:     sleepSeconds,
+		SleepCommandAtMs: nowTs.UnixMilli(),
+	})
+	if len(h.scheduleHistory) > scheduleHistorySize {
+		h.scheduleHistory = h.scheduleHistory[len(h.scheduleHistory)-scheduleHistorySize:]
+	}
 	h.mu.Unlock()
 
 	log.Printf("[chickendoor-schedule] sleep sent (%s): %ds until %s", reason, sleepSeconds, nextTs.Format("15:04:05"))
@@ -221,11 +287,24 @@ func (h *ChickenDoor) updateStateTracking(controllerState, sleepState string, st
 	h.mu.Lock()
 	if (stateForTransition == "sleeping" || stateForTransition == "offline") && h.lastControllerState != stateForTransition {
 		h.sleepingAt = stateTs
+		if n := len(h.scheduleHistory); n > 0 {
+			if h.scheduleHistory[n-1].SleepingAtMs == 0 {
+				h.scheduleHistory[n-1].SleepingAtMs = unixMillisOrZero(stateTs)
+			}
+		}
 	}
 	if stateForTransition == "online" && (h.lastControllerState == "sleeping" || h.lastControllerState == "offline") {
 		h.onlineAt = stateTs
 		if !h.sleepingAt.IsZero() && !h.onlineAt.Before(h.sleepingAt) {
 			h.wakeDeltaMs = h.onlineAt.Sub(h.sleepingAt).Milliseconds()
+		}
+		if n := len(h.scheduleHistory); n > 0 {
+			if h.scheduleHistory[n-1].SleepingAtMs == 0 {
+				h.scheduleHistory[n-1].SleepingAtMs = unixMillisOrZero(h.sleepingAt)
+			}
+			if h.scheduleHistory[n-1].WokeUpAtMs == 0 {
+				h.scheduleHistory[n-1].WokeUpAtMs = unixMillisOrZero(stateTs)
+			}
 		}
 		if h.scheduleActive {
 			h.scheduleWakeAt = time.Now().Add(scheduleWakeDelay)
@@ -425,6 +504,7 @@ func (h *ChickenDoor) StatusHandler(w http.ResponseWriter, r *http.Request) {
 	h.updateStateTracking(controllerState, sleepState, stateTs, hasStateTs)
 
 	h.mu.Lock()
+	historyCopy := append([]ScheduleHistoryEntry(nil), h.scheduleHistory...)
 
 	status := StatusResponse{
 		Position:         position,
@@ -436,11 +516,13 @@ func (h *ChickenDoor) StatusHandler(w http.ResponseWriter, r *http.Request) {
 		IP:               ip,
 		Charging:         charging,
 		ScheduleActive:   h.scheduleActive,
+		ScheduleTimezone: scheduleNow().Location().String(),
 		ServerNowMs:      time.Now().UnixMilli(),
 		SleepCommandAtMs: unixMillisOrZero(h.lastSleepCommandAt),
 		SleepingAtMs:     unixMillisOrZero(h.sleepingAt),
 		OnlineAtMs:       unixMillisOrZero(h.onlineAt),
 		WakeDeltaMs:      h.wakeDeltaMs,
+		ScheduleHistory:  historyCopy,
 	}
 	h.mu.Unlock()
 

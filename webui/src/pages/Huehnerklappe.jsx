@@ -10,6 +10,7 @@ export default function Huehnerklappe() {
   const [awakeSeconds, setAwakeSeconds] = useState(30)
   const [pickerIndex, setPickerIndex] = useState(null)
   const [pickerDraft, setPickerDraft] = useState({ hour: '00', minute: '00', second: '00' })
+  const [historyExpanded, setHistoryExpanded] = useState(false)
   const [status, setStatus] = useState(null)
   const [sending, setSending] = useState(false)
   const [feedback, setFeedback] = useState(null)
@@ -102,9 +103,6 @@ export default function Huehnerklappe() {
     setScheduleTimestamps(prev => {
       const next = [...prev]
       next[index] = value
-      if (controlMode === 'schedule') {
-        void sendSleepSchedule(next, true, true)
-      }
       return next
     })
   }
@@ -114,11 +112,7 @@ export default function Huehnerklappe() {
       if (prev.length >= 20) {
         return prev
       }
-      const next = [...prev, '00:00:00']
-      if (controlMode === 'schedule') {
-        void sendSleepSchedule(next, true, true)
-      }
-      return next
+      return [...prev, '00:00:00']
     })
   }
 
@@ -127,11 +121,7 @@ export default function Huehnerklappe() {
       if (prev.length <= 1) {
         return prev
       }
-      const next = prev.filter((_, i) => i !== index)
-      if (controlMode === 'schedule') {
-        void sendSleepSchedule(next, true, true)
-      }
-      return next
+      return prev.filter((_, i) => i !== index)
     })
   }
 
@@ -207,14 +197,12 @@ export default function Huehnerklappe() {
     }
   }
 
-  const activateManualMode = async () => {
+  const activateManualMode = () => {
     setControlMode('manual')
-    await sendSleepSchedule(scheduleTimestamps, false, false)
   }
 
-  const activateScheduleMode = async () => {
+  const activateScheduleMode = () => {
     setControlMode('schedule')
-    await sendSleepSchedule(scheduleTimestamps, false, true)
   }
 
   const cardStyle = {
@@ -321,6 +309,29 @@ export default function Huehnerklappe() {
     return '—'
   }
 
+  const scheduleHistoryRows = (() => {
+    const entries = Array.isArray(status?.scheduleHistory)
+      ? [...status.scheduleHistory].slice(-20).reverse()
+      : []
+    return Array.from({ length: 20 }, (_, idx) => entries[idx] ?? null)
+  })()
+
+  const scheduleEntryState = (entry) => {
+    if (!entry) {
+      return 'leer'
+    }
+    if (Number.isFinite(entry.wokeUpAtMs) && entry.wokeUpAtMs > 0) {
+      return 'abgeschlossen'
+    }
+    if (Number.isFinite(entry.sleepingAtMs) && entry.sleepingAtMs > 0) {
+      return 'schlaeft'
+    }
+    if (Number.isFinite(entry.sleepCommandAtMs) && entry.sleepCommandAtMs > 0) {
+      return 'gesendet'
+    }
+    return 'offen'
+  }
+
   return (
     <div style={{ maxWidth: 700, margin: '0 auto' }}>
       <h1 style={{ marginBottom: 4 }}>Hühnerklappe Steuerung</h1>
@@ -355,6 +366,7 @@ export default function Huehnerklappe() {
             <StatusItem label="Controller" value={status.controllerState ?? '—'} />
             <StatusItem label="Sleep-Status" value={status.sleepState ?? '—'} />
             <StatusItem label="Weckgrund" value={wakeReason ?? '—'} />
+            <StatusItem label="Schedule-Zeitzone" value={status.scheduleTimezone ?? '—'} />
             <StatusItem label="Sleep gesendet" value={formatStatusTimestamp(status.sleepCommandAtMs)} />
             <StatusItem label="Sleeping seit" value={formatStatusTimestamp(status.sleepingAtMs)} />
             <StatusItem label="Online seit" value={formatStatusTimestamp(status.onlineAtMs)} />
@@ -589,6 +601,50 @@ export default function Huehnerklappe() {
               Timestamp-Schedule senden
             </button>
           </div>
+
+          <div style={{ marginTop: 14 }}>
+            <button
+              type="button"
+              onClick={() => setHistoryExpanded(prev => !prev)}
+              style={{
+                ...ghostBtnStyle,
+                background: selectedTheme.rowBg,
+                border: `1px solid ${selectedTheme.rowBorder}`,
+                color: selectedTheme.labelColor,
+              }}
+            >
+              {historyExpanded ? 'Verlauf ausblenden' : 'Verlauf anzeigen'} (letzte 20)
+            </button>
+          </div>
+
+          {historyExpanded && (
+            <div style={{ marginTop: 12, overflowX: 'auto', border: `1px solid ${selectedTheme.rowBorder}`, borderRadius: 10 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, color: selectedTheme.labelColor }}>
+                <thead>
+                  <tr style={{ background: selectedTheme.rowBg }}>
+                    <th style={{ textAlign: 'left', padding: '10px 12px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>#</th>
+                    <th style={{ textAlign: 'left', padding: '10px 12px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>Status</th>
+                    <th style={{ textAlign: 'left', padding: '10px 12px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>Sleep (Sek.)</th>
+                    <th style={{ textAlign: 'left', padding: '10px 12px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>Sleep gesendet um</th>
+                    <th style={{ textAlign: 'left', padding: '10px 12px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>Geschlafen um</th>
+                    <th style={{ textAlign: 'left', padding: '10px 12px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>Wach geworden um</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {scheduleHistoryRows.map((entry, idx) => (
+                    <tr key={idx}>
+                      <td style={{ padding: '8px 12px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>{idx + 1}</td>
+                      <td style={{ padding: '8px 12px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>{scheduleEntryState(entry)}</td>
+                      <td style={{ padding: '8px 12px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>{entry?.sleepSeconds ?? '—'}</td>
+                      <td style={{ padding: '8px 12px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>{formatStatusTimestamp(entry?.sleepCommandAtMs)}</td>
+                      <td style={{ padding: '8px 12px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>{formatStatusTimestamp(entry?.sleepingAtMs)}</td>
+                      <td style={{ padding: '8px 12px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>{formatStatusTimestamp(entry?.wokeUpAtMs)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
     </div>
