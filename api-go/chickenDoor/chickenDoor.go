@@ -17,6 +17,7 @@ import (
 )
 
 const nanoSetPrefix = "nano/esp32"
+const scheduleActiveTopic = nanoSetPrefix + "/schedule_active"
 
 const scheduleWakeDelay = 10 * time.Second
 const scheduleRetryDelay = 5 * time.Second
@@ -110,6 +111,18 @@ func scheduleNow() time.Time {
 	})
 
 	return time.Now().In(scheduleLocation.loc)
+}
+
+// @brief Publishes whether sleep schedule is active to MQTT.
+// @param active Current schedule active flag.
+// @param reason Context label for logging.
+func (h *ChickenDoor) publishScheduleActive(active bool, reason string) {
+	if err := h.mqttManager.Publish(scheduleActiveTopic, active); err != nil {
+		log.Printf("[chickendoor-schedule] publish schedule_active failed (%s): %v", reason, err)
+		return
+	}
+
+	log.Printf("[chickendoor-schedule] published %s=%t (%s)", scheduleActiveTopic, active, reason)
 }
 
 type ChickenDoor struct {
@@ -683,6 +696,8 @@ func (h *ChickenDoor) SleepScheduleHandler(w http.ResponseWriter, r *http.Reques
 		h.scheduleWakeAt = time.Time{}
 	}
 	h.mu.Unlock()
+
+	h.publishScheduleActive(req.Active, "sleep-schedule-handler")
 
 	jsonResponse(w, map[string]any{
 		"ok":           true,
