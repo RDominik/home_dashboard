@@ -153,7 +153,8 @@ export default function Huehnerklappe() {
   }
 
   const sendSleepSchedule = async (sourceTimestamps = scheduleTimestamps, silent = false, active = controlMode === 'schedule') => {
-    const timestamps = sourceTimestamps.map(v => v.trim())
+    const resolvedSource = Array.isArray(sourceTimestamps) ? sourceTimestamps : scheduleTimestamps
+    const timestamps = resolvedSource.map(v => v.trim())
     if (timestamps.some(v => !v)) {
       if (!silent) {
         setFeedback({ type: 'error', msg: '❌ Bitte alle Timestamp-Felder ausfüllen.' })
@@ -390,6 +391,9 @@ export default function Huehnerklappe() {
             Sleep-Schedule aktiv
           </button>
         </div>
+          <p style={{ marginTop: -6, marginBottom: 12, color: '#6b7280', fontSize: 12 }}>
+            Modus-Wechsel wird erst mit "Timestamp-Schedule senden" an den Server uebernommen.
+          </p>
 
         <div style={sectionStateStyle(controlMode === 'manual')}>
           <h4 style={{ marginTop: 0, marginBottom: 10, color: '#374151' }}>Manuelle Steuerung</h4>
@@ -597,7 +601,7 @@ export default function Huehnerklappe() {
             <button
               style={btnStyle(selectedTheme.sendColor)}
               disabled={sending}
-              onClick={sendSleepSchedule}
+              onClick={() => sendSleepSchedule()}
             >
               Timestamp-Schedule senden
             </button>
