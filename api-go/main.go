@@ -101,14 +101,13 @@ func main() {
 	log.Println("📡 REST service started from main")
 
 	// ChickenDoor background service
-	chickenDoorService := chickendoorpkg.New()
+	chickenDoorService := chickendoorpkg.New(mqttManager)
 	chickenDoorService.Run()
 	defer chickenDoorService.Stop()
 	log.Println("🐔 ChickenDoor service started from main")
 
 	// Router
 	mux := http.NewServeMux()
-	chickenDoorHandler := chickendoorpkg.NewAPIHandler(mqttManager)
 
 	// Wallbox
 	wb := wallboxpkg.NewHandler(mqttManager)
@@ -117,9 +116,9 @@ func main() {
 	mux.HandleFunc("/api/wallbox/history", wb.History)
 
 	// Hühnerklappe
-	mux.HandleFunc("/api/huehnerklappe/status", chickenDoorHandler.StatusHandler)
-	mux.HandleFunc("/api/huehnerklappe/set", chickenDoorHandler.SetHandler)
-	mux.HandleFunc("/api/huehnerklappe/sleep-schedule", chickenDoorHandler.SleepScheduleHandler)
+	mux.HandleFunc("/api/huehnerklappe/status", chickenDoorService.StatusHandler)
+	mux.HandleFunc("/api/huehnerklappe/set", chickenDoorService.SetHandler)
+	mux.HandleFunc("/api/huehnerklappe/", chickenDoorService.SleepScheduleHandler)
 
 	// Inverter
 	mux.HandleFunc("/api/inverter/summary", inverterSummary)
