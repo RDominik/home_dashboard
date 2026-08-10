@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react'
 
 const API = '/api/huehnerklappe'
-const UI_STATE_KEY = 'huehnerklappe.ui.v1'
 
 export default function Huehnerklappe() {
   const [sleepTime, setSleepTime] = useState(60) // default 60 Sekunden
@@ -19,7 +18,7 @@ export default function Huehnerklappe() {
   const [wakeReason, setWakeReason] = useState(null)
   const [charging, setCharging] = useState(null)
   const [clockOffsetMs, setClockOffsetMs] = useState(0)
-  const [uiHydrated, setUiHydrated] = useState(false)
+  const [uiLoaded, setUiLoaded] = useState(false)
 
   // Status laden
   const loadStatus = async () => {
@@ -38,49 +37,68 @@ export default function Huehnerklappe() {
     } catch { /* ignore */ }
   }
 
-  useEffect(() => {
+  const loadUiState = async () => {
     try {
-      const raw = localStorage.getItem(UI_STATE_KEY)
-      if (raw) {
-        const parsed = JSON.parse(raw)
-        if (Number.isFinite(parsed.sleepTime)) {
-          setSleepTime(Math.max(1, Math.min(86400, Number(parsed.sleepTime))))
-        }
-        if (typeof parsed.sleepUntil === 'string') {
-          setSleepUntil(parsed.sleepUntil)
-        }
-        if (parsed.controlMode === 'manual' || parsed.controlMode === 'schedule') {
-          setControlMode(parsed.controlMode)
-        }
-        if (Array.isArray(parsed.scheduleTimestamps)) {
-          const cleaned = parsed.scheduleTimestamps
-            .map(v => String(v).trim())
-            .filter(Boolean)
-            .slice(0, 20)
-          if (cleaned.length > 0) {
-            setScheduleTimestamps(cleaned)
-          }
-        }
-        if (Number.isFinite(parsed.awakeSeconds)) {
-          setAwakeSeconds(Math.max(0, Math.min(86400, Number(parsed.awakeSeconds))))
-        }
-        if (typeof parsed.historyExpanded === 'boolean') {
-          setHistoryExpanded(parsed.historyExpanded)
+      const r = await fetch(`${API}/ui-state`)
+      if (!r.ok) {
+        return
+      }
+
+      const data = await r.json()
+
+      if (Number.isFinite(data.sleepTime)) {
+        setSleepTime(Math.max(1, Math.min(86400, Number(data.sleepTime))))
+      }
+      if (typeof data.sleepUntil === 'string') {
+        setSleepUntil(data.sleepUntil)
+      }
+      if (data.controlMode === 'manual' || data.controlMode === 'schedule') {
+        setControlMode(data.controlMode)
+      } else if (data.scheduleActive) {
+        setControlMode('schedule')
+      } else {
+        setControlMode('manual')
+      }
+      if (Array.isArray(data.scheduleTimestamps) && data.scheduleTimestamps.length > 0) {
+        const cleaned = data.scheduleTimestamps
+          .map(v => String(v).trim())
+          .filter(Boolean)
+          .slice(0, 20)
+        if (cleaned.length > 0) {
+          setScheduleTimestamps(cleaned)
         }
       }
+      if (Number.isFinite(data.awakeSeconds)) {
+        setAwakeSeconds(Math.max(0, Math.min(86400, Number(data.awakeSeconds))))
+      }
+      if (typeof data.historyExpanded === 'boolean') {
+        setHistoryExpanded(data.historyExpanded)
+      }
     } catch {
-      // Ignore invalid local UI state and keep defaults.
+      // Ignore transient load errors.
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false
+
+    const init = async () => {
+      await Promise.all([loadStatus(), loadUiState()])
+      if (!cancelled) {
+        setUiLoaded(true)
+      }
     }
 
-    setUiHydrated(true)
-
-    loadStatus()
+    init()
     const t = setInterval(loadStatus, 5000)
-    return () => clearInterval(t)
+    return () => {
+      cancelled = true
+      clearInterval(t)
+    }
   }, [])
 
   useEffect(() => {
-    if (!uiHydrated) {
+    if (!uiLoaded) {
       return
     }
 
@@ -93,14 +111,17 @@ export default function Huehnerklappe() {
       historyExpanded,
     }
 
-    try {
-      localStorage.setItem(UI_STATE_KEY, JSON.stringify(payload))
-    } catch {
-      // Ignore persistence errors (e.g. private mode quota).
-    }
-  }, [uiHydrated, sleepTime, sleepUntil, controlMode, scheduleTimestamps, awakeSeconds, historyExpanded])
+    const timer = setTimeout(() => {
+      fetch(`${API}/ui-state`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }).catch(() => {})
+    }, 250)
 
-  // Befehl senden
+    return () => clearTimeout(timer)
+  }, [uiLoaded, sleepTime, sleepUntil, controlMode, scheduleTimestamps, awakeSeconds, historyExpanded])
+
   const sendCommand = async (key, value = null, successMessage = null) => {
     setSending(true)
     setFeedback(null)

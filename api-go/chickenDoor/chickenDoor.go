@@ -147,6 +147,10 @@ type ChickenDoor struct {
 	scheduleActive       bool
 	scheduleWakeAt       time.Time
 	scheduleHistory      []ScheduleHistoryEntry
+	sleepTime            int
+	sleepUntil           string
+	controlMode          string
+	historyExpanded      bool
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -158,6 +162,19 @@ type persistedState struct {
 	ScheduleTimestamps   []string               `json:"scheduleTimestamps"`
 	ScheduleActive       bool                   `json:"scheduleActive"`
 	ScheduleHistory      []ScheduleHistoryEntry `json:"scheduleHistory"`
+	SleepTime            int                    `json:"sleepTime"`
+	SleepUntil           string                 `json:"sleepUntil"`
+	ControlMode          string                 `json:"controlMode"`
+	HistoryExpanded      bool                   `json:"historyExpanded"`
+}
+
+type uiStateRequest struct {
+	SleepTime          int      `json:"sleepTime"`
+	SleepUntil         string   `json:"sleepUntil"`
+	ControlMode        string   `json:"controlMode"`
+	HistoryExpanded    bool     `json:"historyExpanded"`
+	ScheduleTimestamps []string `json:"scheduleTimestamps"`
+	AwakeSeconds       int      `json:"awakeSeconds"`
 }
 
 // @brief Opens/creates the local bbolt state database.
@@ -230,6 +247,17 @@ func (h *ChickenDoor) loadPersistedState() {
 	h.scheduleTimestamps = append([]string(nil), state.ScheduleTimestamps...)
 	h.scheduleActive = state.ScheduleActive
 	h.scheduleHistory = append([]ScheduleHistoryEntry(nil), state.ScheduleHistory...)
+	h.sleepTime = state.SleepTime
+	h.sleepUntil = state.SleepUntil
+	h.controlMode = state.ControlMode
+	h.historyExpanded = state.HistoryExpanded
+	if h.controlMode == "" {
+		if h.scheduleActive {
+			h.controlMode = "schedule"
+		} else {
+			h.controlMode = "manual"
+		}
+	}
 	h.mu.Unlock()
 
 	log.Printf("[chickendoor-state] restored schedule: active=%t timestamps=%d history=%d", h.scheduleActive, len(h.scheduleTimestamps), len(h.scheduleHistory))
@@ -247,6 +275,10 @@ func (h *ChickenDoor) persistState() {
 		ScheduleTimestamps:   append([]string(nil), h.scheduleTimestamps...),
 		ScheduleActive:       h.scheduleActive,
 		ScheduleHistory:      append([]ScheduleHistoryEntry(nil), h.scheduleHistory...),
+		SleepTime:            h.sleepTime,
+		SleepUntil:           h.sleepUntil,
+		ControlMode:          h.controlMode,
+		HistoryExpanded:      h.historyExpanded,
 	}
 	h.mu.Unlock()
 
@@ -637,6 +669,8 @@ func (h *ChickenDoor) APIHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/api/huehnerklappe/status":
 		h.StatusHandler(w, r)
+	case "/api/huehnerklappe/ui-state":
+		h.UIStateHandler(w, r)
 	case "/api/huehnerklappe/set":
 		h.SetHandler(w, r)
 	case "/api/huehnerklappe/sleep-schedule", "/api/huehnerklappe/":
@@ -712,6 +746,69 @@ func (h *ChickenDoor) StatusHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jsonResponse(w, status)
+}
+
+// @brief Returns or stores the shared UI settings for the Hühnerklappe page.
+//
+// GET returns the currently persisted values. PUT stores the provided values
+// so all browsers load the same shared settings.
+// @param w HTTP response writer.
+// @param r HTTP request.
+func (h *ChickenDoor) UIStateHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		h.mu.Lock()
+		response := map[string]any{
+			"sleepTime":          h.sleepTime,
+			"sleepUntil":         h.sleepUntil,
+			"controlMode":        h.controlMode,
+			"historyExpanded":    h.historyExpanded,
+			"scheduleTimestamps": append([]string(nil), h.scheduleTimestamps...),
+			"awakeSeconds":       h.scheduleAwakeSeconds,
+			"scheduleActive":     h.scheduleActive,
+		}
+		h.mu.Unlock()
+		jsonResponse(w, response)
+		return
+	case http.MethodPut:
+		var req uiStateRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			jsonError(w, http.StatusBadRequest, "Ungültiger JSON body")
+			return
+		}
+
+		h.mu.Lock()
+		h.sleepTime = req.SleepTime
+		h.sleepUntil = strings.TrimSpace(req.SleepUntil)
+		if req.ControlMode == "manual" || req.ControlMode == "schedule" {
+			h.controlMode = req.ControlMode
+		}
+		h.historyExpanded = req.HistoryExpanded
+		if req.AwakeSeconds >= 0 {
+			h.scheduleAwakeSeconds = req.AwakeSeconds
+		}
+		if len(req.ScheduleTimestamps) > 0 {
+			cleaned := make([]string, 0, len(req.ScheduleTimestamps))
+			for _, ts := range req.ScheduleTimestamps {
+				trimmed := strings.TrimSpace(ts)
+				if trimmed == "" {
+					continue
+				}
+				cleaned = append(cleaned, trimmed)
+			}
+			if len(cleaned) > 0 {
+				h.scheduleTimestamps = append([]string(nil), cleaned...)
+			}
+		}
+		h.mu.Unlock()
+
+		h.persistState()
+		jsonResponse(w, map[string]any{"ok": true})
+		return
+	default:
+		w.Header().Set("Allow", "GET, PUT")
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
 }
 
 // @brief Sends a manual control command to the chicken door.
@@ -825,6 +922,11 @@ func (h *ChickenDoor) SleepScheduleHandler(w http.ResponseWriter, r *http.Reques
 	h.scheduleAwakeSeconds = req.AwakeSeconds
 	h.scheduleTimestamps = append([]string(nil), cleanedTimestamps...)
 	h.scheduleActive = req.Active
+	if req.Active {
+		h.controlMode = "schedule"
+	} else {
+		h.controlMode = "manual"
+	}
 	if req.Active {
 		// Trigger processing in runLoop; next timestamp is calculated there.
 		h.scheduleWakeAt = time.Now()
