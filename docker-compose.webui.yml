@@ -22,6 +22,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /home/dominik/Repository/webgui:/repo
+      - api_data:/app/data
     ports:
       - "8083:8083"
     restart: unless-stopped
@@ -31,3 +32,6 @@ services:
       timeout: 3s
       retries: 5
       start_period: 20s
+
+volumes:
+  api_data:

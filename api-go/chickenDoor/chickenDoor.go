@@ -8,16 +8,22 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"go.etcd.io/bbolt"
 
 	"webgui-api/mqtt"
 )
 
 const nanoSetPrefix = "nano/esp32"
 const scheduleActiveTopic = nanoSetPrefix + "/schedule_active"
+const stateDBPathDefault = "data/chickendoor.db"
+const stateBucketName = "chickendoor"
+const stateKey = "state"
 
 const scheduleWakeDelay = 10 * time.Second
 const scheduleRetryDelay = 5 * time.Second
@@ -127,6 +133,7 @@ func (h *ChickenDoor) publishScheduleActive(active bool, reason string) {
 
 type ChickenDoor struct {
 	mqttManager *mqtt.Manager
+	db          *bbolt.DB
 	mu          sync.Mutex
 
 	lastControllerState string
@@ -146,14 +153,131 @@ type ChickenDoor struct {
 	done   chan struct{}
 }
 
+type persistedState struct {
+	ScheduleAwakeSeconds int                    `json:"scheduleAwakeSeconds"`
+	ScheduleTimestamps   []string               `json:"scheduleTimestamps"`
+	ScheduleActive       bool                   `json:"scheduleActive"`
+	ScheduleHistory      []ScheduleHistoryEntry `json:"scheduleHistory"`
+}
+
+// @brief Opens/creates the local bbolt state database.
+// @return Open DB handle or nil when opening fails.
+func openStateDB() *bbolt.DB {
+	path := strings.TrimSpace(os.Getenv("CHICKENDOOR_DB_PATH"))
+	if path == "" {
+		path = stateDBPathDefault
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		log.Printf("[chickendoor-state] mkdir failed for %s: %v", path, err)
+		return nil
+	}
+
+	db, err := bbolt.Open(path, 0o600, &bbolt.Options{Timeout: 1 * time.Second})
+	if err != nil {
+		log.Printf("[chickendoor-state] open failed for %s: %v", path, err)
+		return nil
+	}
+
+	if err := db.Update(func(tx *bbolt.Tx) error {
+		_, createErr := tx.CreateBucketIfNotExists([]byte(stateBucketName))
+		return createErr
+	}); err != nil {
+		log.Printf("[chickendoor-state] bucket init failed: %v", err)
+		_ = db.Close()
+		return nil
+	}
+
+	log.Printf("[chickendoor-state] using %s", path)
+	return db
+}
+
+// @brief Loads persisted schedule state from local DB.
+func (h *ChickenDoor) loadPersistedState() {
+	if h.db == nil {
+		return
+	}
+
+	var raw []byte
+	if err := h.db.View(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket([]byte(stateBucketName))
+		if bucket == nil {
+			return nil
+		}
+		stored := bucket.Get([]byte(stateKey))
+		if len(stored) == 0 {
+			return nil
+		}
+		raw = append([]byte(nil), stored...)
+		return nil
+	}); err != nil {
+		log.Printf("[chickendoor-state] load failed: %v", err)
+		return
+	}
+
+	if len(raw) == 0 {
+		return
+	}
+
+	var state persistedState
+	if err := json.Unmarshal(raw, &state); err != nil {
+		log.Printf("[chickendoor-state] decode failed: %v", err)
+		return
+	}
+
+	h.mu.Lock()
+	h.scheduleAwakeSeconds = state.ScheduleAwakeSeconds
+	h.scheduleTimestamps = append([]string(nil), state.ScheduleTimestamps...)
+	h.scheduleActive = state.ScheduleActive
+	h.scheduleHistory = append([]ScheduleHistoryEntry(nil), state.ScheduleHistory...)
+	h.mu.Unlock()
+
+	log.Printf("[chickendoor-state] restored schedule: active=%t timestamps=%d history=%d", h.scheduleActive, len(h.scheduleTimestamps), len(h.scheduleHistory))
+}
+
+// @brief Persists current schedule state/history to local DB.
+func (h *ChickenDoor) persistState() {
+	if h.db == nil {
+		return
+	}
+
+	h.mu.Lock()
+	state := persistedState{
+		ScheduleAwakeSeconds: h.scheduleAwakeSeconds,
+		ScheduleTimestamps:   append([]string(nil), h.scheduleTimestamps...),
+		ScheduleActive:       h.scheduleActive,
+		ScheduleHistory:      append([]ScheduleHistoryEntry(nil), h.scheduleHistory...),
+	}
+	h.mu.Unlock()
+
+	payload, err := json.Marshal(state)
+	if err != nil {
+		log.Printf("[chickendoor-state] encode failed: %v", err)
+		return
+	}
+
+	if err := h.db.Update(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket([]byte(stateBucketName))
+		if bucket == nil {
+			return fmt.Errorf("state bucket missing")
+		}
+		return bucket.Put([]byte(stateKey), payload)
+	}); err != nil {
+		log.Printf("[chickendoor-state] persist failed: %v", err)
+	}
+}
+
 // @brief Creates a new ChickenDoor instance.
 // @param mqttManager MQTT manager used for publish and status access.
 // @return Initialized ChickenDoor instance with a ready-to-use done channel.
 func New(mqttManager *mqtt.Manager) *ChickenDoor {
-	return &ChickenDoor{
+	h := &ChickenDoor{
 		mqttManager: mqttManager,
+		db:          openStateDB(),
 		done:        make(chan struct{}),
 	}
+	h.loadPersistedState()
+	return h
 }
 
 // @brief Parses a time-of-day string relative to base day and timezone.
@@ -277,6 +401,7 @@ func (h *ChickenDoor) scheduleSleepUntilNext(reason string) bool {
 		h.scheduleHistory = h.scheduleHistory[len(h.scheduleHistory)-scheduleHistorySize:]
 	}
 	h.mu.Unlock()
+	h.persistState()
 
 	log.Printf("[chickendoor-schedule] sleep sent (%s): %ds until %s", reason, sleepSeconds, nextTs.Format("15:04:05"))
 	return true
@@ -300,26 +425,33 @@ func (h *ChickenDoor) updateStateTracking(controllerState, sleepState string, st
 		return
 	}
 
+	changed := false
 	h.mu.Lock()
 	if (stateForTransition == "sleeping" || stateForTransition == "offline") && h.lastControllerState != stateForTransition {
 		h.sleepingAt = stateTs
+		changed = true
 		if n := len(h.scheduleHistory); n > 0 {
 			if h.scheduleHistory[n-1].SleepingAtMs == 0 {
 				h.scheduleHistory[n-1].SleepingAtMs = unixMillisOrZero(stateTs)
+				changed = true
 			}
 		}
 	}
 	if stateForTransition == "online" && (h.lastControllerState == "sleeping" || h.lastControllerState == "offline") {
 		h.onlineAt = stateTs
+		changed = true
 		if !h.sleepingAt.IsZero() && !h.onlineAt.Before(h.sleepingAt) {
 			h.wakeDeltaMs = h.onlineAt.Sub(h.sleepingAt).Milliseconds()
+			changed = true
 		}
 		if n := len(h.scheduleHistory); n > 0 {
 			if h.scheduleHistory[n-1].SleepingAtMs == 0 {
 				h.scheduleHistory[n-1].SleepingAtMs = unixMillisOrZero(h.sleepingAt)
+				changed = true
 			}
 			if h.scheduleHistory[n-1].WokeUpAtMs == 0 {
 				h.scheduleHistory[n-1].WokeUpAtMs = unixMillisOrZero(stateTs)
+				changed = true
 			}
 		}
 		if h.scheduleActive {
@@ -328,6 +460,10 @@ func (h *ChickenDoor) updateStateTracking(controllerState, sleepState string, st
 	}
 	h.lastControllerState = stateForTransition
 	h.mu.Unlock()
+
+	if changed {
+		h.persistState()
+	}
 }
 
 // @brief Executes one periodic scheduler tick.
@@ -698,6 +834,7 @@ func (h *ChickenDoor) SleepScheduleHandler(w http.ResponseWriter, r *http.Reques
 	h.mu.Unlock()
 
 	h.publishScheduleActive(req.Active, "sleep-schedule-handler")
+	h.persistState()
 
 	jsonResponse(w, map[string]any{
 		"ok":           true,
@@ -750,5 +887,11 @@ func (cd *ChickenDoor) Stop() {
 		log.Println("🐔 Stopping ChickenDoor service...")
 		cd.cancel()
 		<-cd.done
+	}
+
+	if cd.db != nil {
+		if err := cd.db.Close(); err != nil {
+			log.Printf("[chickendoor-state] close failed: %v", err)
+		}
 	}
 }
