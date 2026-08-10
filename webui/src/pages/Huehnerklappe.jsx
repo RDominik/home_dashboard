@@ -440,13 +440,13 @@ export default function Huehnerklappe() {
         <h3 style={{ marginTop: 0, color: '#374151' }}>📊 Aktueller Status</h3>
         {status ? (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-            <StatusItem label="Akku" value={battery !== null ? `${battery}%` : '—'} />
+            <StatusItem label="Akku" value={battery !== null && battery !== '' ? `${battery}%` : '—'} />
             <StatusItem label="Charging" value={charging ?? '—'} />
             <StatusItem label="IP" value={status.ip ?? '—'} />
             <StatusItem label="Position" value={status.position} />
             <StatusItem label="Letzte Aktion" value={status.lastAction} />
             <StatusItem label="Controller" value={status.controllerState ?? '—'} />
-            <StatusItem label="Sleep-Status" value={status.sleepState ?? '—'} />
+            <StatusItem label="Sleep-ACK" value={status.sleepState ?? '—'} />
             <StatusItem label="Weckgrund" value={wakeReason ?? '—'} />
             <StatusItem label="Schedule aktiv" value={status.scheduleActive ? 'ja' : 'nein'} />
             <StatusItem label="Schedule-Zeitzone" value={status.scheduleTimezone ?? '—'} />

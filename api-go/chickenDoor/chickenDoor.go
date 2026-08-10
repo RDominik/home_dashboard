@@ -58,7 +58,7 @@ type StatusResponse struct {
 	Position         string                 `json:"position"`
 	LastAction       string                 `json:"lastAction"`
 	Error            string                 `json:"error,omitempty"`
-	Battery          int                    `json:"battery"`
+	Battery          string                 `json:"battery"`
 	WakeReason       string                 `json:"wakeReason"`
 	ControllerState  string                 `json:"controllerState"`
 	SleepState       string                 `json:"sleepState"`
@@ -152,6 +152,15 @@ type ChickenDoor struct {
 	controlMode          string
 	historyExpanded      bool
 
+	lastStatusPosition   string
+	lastStatusAction     string
+	lastStatusBattery    string
+	lastStatusWakeReason string
+	lastStatusController string
+	lastStatusSleep      string
+	lastStatusIP         string
+	lastStatusCharging   string
+
 	ctx    context.Context
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -166,6 +175,14 @@ type persistedState struct {
 	SleepUntil           string                 `json:"sleepUntil"`
 	ControlMode          string                 `json:"controlMode"`
 	HistoryExpanded      bool                   `json:"historyExpanded"`
+	LastStatusPosition   string                 `json:"lastStatusPosition"`
+	LastStatusAction     string                 `json:"lastStatusAction"`
+	LastStatusBattery    string                 `json:"lastStatusBattery"`
+	LastStatusWakeReason string                 `json:"lastStatusWakeReason"`
+	LastStatusController string                 `json:"lastStatusController"`
+	LastStatusSleep      string                 `json:"lastStatusSleep"`
+	LastStatusIP         string                 `json:"lastStatusIP"`
+	LastStatusCharging   string                 `json:"lastStatusCharging"`
 }
 
 type uiStateRequest struct {
@@ -251,6 +268,14 @@ func (h *ChickenDoor) loadPersistedState() {
 	h.sleepUntil = state.SleepUntil
 	h.controlMode = state.ControlMode
 	h.historyExpanded = state.HistoryExpanded
+	h.lastStatusPosition = state.LastStatusPosition
+	h.lastStatusAction = state.LastStatusAction
+	h.lastStatusBattery = state.LastStatusBattery
+	h.lastStatusWakeReason = state.LastStatusWakeReason
+	h.lastStatusController = state.LastStatusController
+	h.lastStatusSleep = state.LastStatusSleep
+	h.lastStatusIP = state.LastStatusIP
+	h.lastStatusCharging = state.LastStatusCharging
 	if h.controlMode == "" {
 		if h.scheduleActive {
 			h.controlMode = "schedule"
@@ -279,6 +304,14 @@ func (h *ChickenDoor) persistState() {
 		SleepUntil:           h.sleepUntil,
 		ControlMode:          h.controlMode,
 		HistoryExpanded:      h.historyExpanded,
+		LastStatusPosition:   h.lastStatusPosition,
+		LastStatusAction:     h.lastStatusAction,
+		LastStatusBattery:    h.lastStatusBattery,
+		LastStatusWakeReason: h.lastStatusWakeReason,
+		LastStatusController: h.lastStatusController,
+		LastStatusSleep:      h.lastStatusSleep,
+		LastStatusIP:         h.lastStatusIP,
+		LastStatusCharging:   h.lastStatusCharging,
 	}
 	h.mu.Unlock()
 
@@ -300,7 +333,7 @@ func (h *ChickenDoor) persistState() {
 }
 
 // @brief Creates a new ChickenDoor instance.
-// @param mqttManager MQTT manager used for publish and status access.
+// @param mqttManager MQTT manager used for publishing and status access.
 // @return Initialized ChickenDoor instance with a ready-to-use done channel.
 func New(mqttManager *mqtt.Manager) *ChickenDoor {
 	h := &ChickenDoor{
@@ -312,7 +345,7 @@ func New(mqttManager *mqtt.Manager) *ChickenDoor {
 	return h
 }
 
-// @brief Parses a time-of-day string relative to base day and timezone.
+// @brief Parses a time-of-day string relative to the base day and timezone.
 //
 // Supported formats: HH:MM and HH:MM:SS. The date is taken from base so the
 // returned timestamp stays in the same day context.
@@ -344,7 +377,7 @@ func parseScheduleTimestampForDay(base time.Time, value string) (time.Time, erro
 
 // @brief Computes the next valid schedule timestamp relative to now.
 //
-// Past timestamps are shifted to the next day; then the earliest candidate is
+// Past timestamps are shifted to the next day, then the earliest candidate is
 // returned.
 // @param now Current reference time.
 // @param timestamps List of time strings in HH:MM or HH:MM:SS format.
@@ -375,8 +408,9 @@ func nextScheduleTimestamp(now time.Time, timestamps []string) (time.Time, error
 
 // @brief Calculates and sends a sleep command until the next schedule timestamp.
 //
-// The method atomically reads the current schedule, computes remaining time,
-// publishes milliseconds to nano/esp32/sleepms, and updates lastSleepCommandAt.
+// The method atomically reads the current schedule, computes the remaining
+// time, publishes milliseconds to nano/esp32/sleepms, and updates
+// lastSleepCommandAt.
 // @param reason Context label for logging.
 // @return true when a sleep command was published successfully, otherwise false.
 func (h *ChickenDoor) scheduleSleepUntilNext(reason string) bool {
@@ -504,8 +538,8 @@ func (h *ChickenDoor) updateStateTracking(controllerState, sleepState string, st
 // cycle after scheduleWakeAt has elapsed.
 //
 // Scheduling is blocked only while the controller is explicitly sleeping or
-// offline. Unknown/non-standard awake states are treated as schedulable so the
-// schedule still works with differing firmware status strings.
+// offline. Unknown or non-standard awake states are treated as schedulable so
+// the schedule still works with differing firmware status strings.
 func (h *ChickenDoor) scheduleTick() {
 	msgs := h.mqttManager.Messages()
 	controllerState := toString(msgs["status"])
@@ -683,7 +717,9 @@ func (h *ChickenDoor) APIHandler(w http.ResponseWriter, r *http.Request) {
 // @brief Returns the current ChickenDoor status as JSON.
 //
 // Reads MQTT values including sleep/wakeup info, updates internal transition
-// tracking, and returns consolidated status data for the UI.
+// tracking, and returns consolidated status data for the UI. If live MQTT
+// values are not yet available, the last persisted values are used as a
+// fallback so the UI still shows meaningful data after startup.
 // @param w HTTP response writer.
 // @param r HTTP request (unused).
 func (h *ChickenDoor) StatusHandler(w http.ResponseWriter, r *http.Request) {
@@ -694,16 +730,55 @@ func (h *ChickenDoor) StatusHandler(w http.ResponseWriter, r *http.Request) {
 	wakeReason := toString(firstValue(msgs, "sleepms/wakeup_reason", "sleepms_wakeup_reason"))
 	ip := toString(msgs["ip"])
 	charging := toString(msgs["battery_charging"])
-	battery := toInt(msgs["battery_percent"])
+	battery := ""
+	if value, ok := msgs["battery_percent"]; ok && value != nil {
+		battery = fmt.Sprintf("%v", value)
+	}
 	position := toString(msgs["engine_status"])
 	if position == "" {
 		position = "unbekannt"
 	}
 
+	h.mu.Lock()
+	if position == "unbekannt" && h.lastStatusPosition != "" {
+		position = h.lastStatusPosition
+	}
+	if battery == "" {
+		battery = h.lastStatusBattery
+	}
+	if wakeReason == "" {
+		wakeReason = h.lastStatusWakeReason
+	}
+	if controllerState == "" {
+		controllerState = h.lastStatusController
+	}
+	if sleepState == "" {
+		sleepState = h.lastStatusSleep
+	}
+	if ip == "" {
+		ip = h.lastStatusIP
+	}
+	if charging == "" {
+		charging = h.lastStatusCharging
+	}
+	h.mu.Unlock()
+
 	stateTs, hasStateTs := h.firstMessageTimestamp("status", "sleepms/status", "sleepms_status")
 	h.updateStateTracking(controllerState, sleepState, stateTs, hasStateTs)
 
 	h.mu.Lock()
+	// Persist the latest non-empty status values so the next UI load can fall
+	// back to them if MQTT is still empty.
+	if toString(msgs["status"]) != "" || sleepState != "" || wakeReason != "" || ip != "" || charging != "" || battery != "" || position != "" {
+		h.lastStatusPosition = position
+		h.lastStatusAction = toString(msgs["engine_set"])
+		h.lastStatusBattery = battery
+		h.lastStatusWakeReason = wakeReason
+		h.lastStatusController = controllerState
+		h.lastStatusSleep = sleepState
+		h.lastStatusIP = ip
+		h.lastStatusCharging = charging
+	}
 	historyCopy := append([]ScheduleHistoryEntry(nil), h.scheduleHistory...)
 
 	status := StatusResponse{
@@ -741,10 +816,15 @@ func (h *ChickenDoor) StatusHandler(w http.ResponseWriter, r *http.Request) {
 	if status.IP == "" {
 		status.IP = "-"
 	}
+	if status.Battery == "" {
+		status.Battery = "-"
+	}
 	if status.Charging == "" {
 		status.Charging = "-"
 	}
 
+	// Store the final status snapshot so it survives container restarts.
+	h.persistState()
 	jsonResponse(w, status)
 }
 
@@ -923,6 +1003,8 @@ func (h *ChickenDoor) SleepScheduleHandler(w http.ResponseWriter, r *http.Reques
 	h.scheduleTimestamps = append([]string(nil), cleanedTimestamps...)
 	h.scheduleActive = req.Active
 	if req.Active {
+		// The active mode is persisted separately so all browsers load the same
+		// schedule state after a restart.
 		h.controlMode = "schedule"
 	} else {
 		h.controlMode = "manual"
