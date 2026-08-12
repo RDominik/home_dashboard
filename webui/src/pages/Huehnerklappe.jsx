@@ -6,6 +6,7 @@ export default function Huehnerklappe() {
   const [sleepTime, setSleepTime] = useState(60) // default 60 Sekunden
   const [sleepUntil, setSleepUntil] = useState('')
   const [controlMode, setControlMode] = useState('manual')
+  const [scheduleActive, setScheduleActive] = useState(false)
   const [scheduleTimestamps, setScheduleTimestamps] = useState(['06:30:00', '12:00:00', '18:30:00'])
   const [awakeSeconds, setAwakeSeconds] = useState(30)
   const [pickerIndex, setPickerIndex] = useState(null)
@@ -32,6 +33,9 @@ export default function Huehnerklappe() {
         setCharging(data.charging ?? null)
         if (Number.isFinite(data.serverNowMs)) {
           setClockOffsetMs(Date.now() - data.serverNowMs)
+        }
+        if (typeof data.scheduleActive === 'boolean') {
+          setScheduleActive(data.scheduleActive)
         }
       }
     } catch { /* ignore */ }
@@ -106,6 +110,7 @@ export default function Huehnerklappe() {
       sleepTime,
       sleepUntil,
       controlMode,
+      scheduleActive,
       scheduleTimestamps,
       awakeSeconds,
       historyExpanded,
@@ -120,7 +125,7 @@ export default function Huehnerklappe() {
     }, 250)
 
     return () => clearTimeout(timer)
-  }, [uiLoaded, sleepTime, sleepUntil, controlMode, scheduleTimestamps, awakeSeconds, historyExpanded])
+  }, [uiLoaded, sleepTime, sleepUntil, controlMode, scheduleActive, scheduleTimestamps, awakeSeconds, historyExpanded])
 
   const sendCommand = async (key, value = null, successMessage = null) => {
     setSending(true)
@@ -258,6 +263,7 @@ export default function Huehnerklappe() {
       })
       const data = await r.json()
       if (data.ok) {
+        setScheduleActive(active)
         if (!silent && data.stored) {
           setFeedback({ type: 'success', msg: `✅ ${timestamps.length} Timestamps gespeichert (wach: ${awakeSeconds}s)` })
         } else if (!silent) {
@@ -280,11 +286,17 @@ export default function Huehnerklappe() {
 
   const activateManualMode = async () => {
     setControlMode('manual')
+    setScheduleActive(false)
     await sendSleepSchedule(scheduleTimestamps, false, false)
   }
 
   const activateScheduleMode = () => {
     setControlMode('schedule')
+  }
+
+  const setScheduleEnabled = async (nextActive) => {
+    setScheduleActive(nextActive)
+    await sendSleepSchedule(scheduleTimestamps, false, nextActive)
   }
 
   const cardStyle = {
@@ -368,6 +380,29 @@ export default function Huehnerklappe() {
     cursor: sending ? 'wait' : 'pointer',
     opacity: sending ? 0.6 : 1,
   })
+
+  const scheduleToggleTrackStyle = {
+    position: 'relative',
+    width: 58,
+    height: 32,
+    borderRadius: 999,
+    background: scheduleActive ? '#047857' : '#d1d5db',
+    transition: 'background 0.2s ease',
+    flexShrink: 0,
+    boxShadow: scheduleActive ? 'inset 0 0 0 1px rgba(4, 120, 87, 0.35)' : 'inset 0 0 0 1px rgba(148, 163, 184, 0.35)',
+  }
+
+  const scheduleToggleThumbStyle = {
+    position: 'absolute',
+    top: 3,
+    left: scheduleActive ? 29 : 3,
+    width: 26,
+    height: 26,
+    borderRadius: '50%',
+    background: '#ffffff',
+    boxShadow: '0 2px 6px rgba(15, 23, 42, 0.22)',
+    transition: 'left 0.2s ease',
+  }
 
   const sectionStateStyle = (isActive) => ({
     opacity: isActive ? 1 : 0.45,
@@ -682,10 +717,38 @@ export default function Huehnerklappe() {
             <button
               style={btnStyle(selectedTheme.sendColor)}
               disabled={sending}
-              onClick={() => sendSleepSchedule(scheduleTimestamps, false, true)}
+              onClick={() => setScheduleEnabled(true)}
             >
               Timestamp-Schedule senden
             </button>
+          </div>
+
+          <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13, color: selectedTheme.subtitleColor, fontWeight: 600 }}>Modus</span>
+            <span style={{ fontSize: 13, color: selectedTheme.labelColor }}>Normal</span>
+            <label
+              style={{ display: 'inline-flex', alignItems: 'center', cursor: sending ? 'wait' : 'pointer', opacity: sending ? 0.6 : 1 }}
+              title="Zwischen Normal und Schedule umschalten"
+            >
+              <input
+                type="checkbox"
+                checked={scheduleActive}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setScheduleEnabled(true)
+                  } else {
+                    setScheduleEnabled(false)
+                  }
+                }}
+                disabled={sending}
+                aria-label="Schedule-Modus aktivieren"
+                style={{ position: 'absolute', opacity: 0, width: 1, height: 1, pointerEvents: 'none' }}
+              />
+              <span style={scheduleToggleTrackStyle}>
+                <span style={scheduleToggleThumbStyle} />
+              </span>
+            </label>
+            <span style={{ fontSize: 13, color: selectedTheme.labelColor }}>Schedule</span>
           </div>
 
           <div style={{ marginTop: 14 }}>
