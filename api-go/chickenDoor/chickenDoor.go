@@ -75,10 +75,11 @@ type StatusResponse struct {
 }
 
 type ScheduleHistoryEntry struct {
-	SleepSeconds     int   `json:"sleepSeconds"`
-	SleepCommandAtMs int64 `json:"sleepCommandAtMs,omitempty"`
-	SleepingAtMs     int64 `json:"sleepingAtMs,omitempty"`
-	WokeUpAtMs       int64 `json:"wokeUpAtMs,omitempty"`
+	SleepSeconds     int    `json:"sleepSeconds"`
+	BatteryPercent   string `json:"batteryPercent,omitempty"`
+	SleepCommandAtMs int64  `json:"sleepCommandAtMs,omitempty"`
+	SleepingAtMs     int64  `json:"sleepingAtMs,omitempty"`
+	WokeUpAtMs       int64  `json:"wokeUpAtMs,omitempty"`
 }
 
 // @brief Converts a timestamp to Unix milliseconds.
@@ -417,6 +418,7 @@ func (h *ChickenDoor) scheduleSleepUntilNext(reason string) bool {
 	h.mu.Lock()
 	active := h.scheduleActive
 	timestamps := append([]string(nil), h.scheduleTimestamps...)
+	lastKnownBattery := h.lastStatusBattery
 	h.mu.Unlock()
 
 	if !active || len(timestamps) == 0 {
@@ -456,11 +458,22 @@ func (h *ChickenDoor) scheduleSleepUntilNext(reason string) bool {
 		return false
 	}
 
+	batteryPercent := ""
+	if msgs := h.mqttManager.Messages(); msgs != nil {
+		if value, ok := msgs["battery_percent"]; ok && value != nil {
+			batteryPercent = fmt.Sprintf("%v", value)
+		}
+	}
+	if batteryPercent == "" {
+		batteryPercent = lastKnownBattery
+	}
+
 	h.mu.Lock()
 	nowTs := time.Now()
 	h.lastSleepCommandAt = nowTs
 	h.scheduleHistory = append(h.scheduleHistory, ScheduleHistoryEntry{
 		SleepSeconds:     sleepSeconds,
+		BatteryPercent:   batteryPercent,
 		SleepCommandAtMs: nowTs.UnixMilli(),
 	})
 	if len(h.scheduleHistory) > scheduleHistorySize {
