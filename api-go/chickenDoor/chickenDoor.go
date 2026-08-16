@@ -29,6 +29,7 @@ const scheduleWakeDelay = 10 * time.Second
 const scheduleRetryDelay = 5 * time.Second
 const scheduleHistorySize = 20
 const defaultScheduleTimezone = "Europe/Berlin"
+const defaultMotorAutoStopSeconds = 15
 
 var scheduleLocation = struct {
 	once sync.Once
@@ -149,9 +150,11 @@ type ChickenDoor struct {
 	scheduleWakeAt       time.Time
 	scheduleHistory      []ScheduleHistoryEntry
 	sleepTime            int
+	motorAutoStopSeconds int
 	sleepUntil           string
 	controlMode          string
 	historyExpanded      bool
+	motorRunningSince    time.Time
 
 	lastStatusPosition   string
 	lastStatusAction     string
@@ -173,6 +176,7 @@ type persistedState struct {
 	ScheduleActive       bool                   `json:"scheduleActive"`
 	ScheduleHistory      []ScheduleHistoryEntry `json:"scheduleHistory"`
 	SleepTime            int                    `json:"sleepTime"`
+	MotorAutoStopSeconds int                    `json:"motorAutoStopSeconds"`
 	SleepUntil           string                 `json:"sleepUntil"`
 	ControlMode          string                 `json:"controlMode"`
 	HistoryExpanded      bool                   `json:"historyExpanded"`
@@ -187,12 +191,26 @@ type persistedState struct {
 }
 
 type uiStateRequest struct {
-	SleepTime          int      `json:"sleepTime"`
-	SleepUntil         string   `json:"sleepUntil"`
-	ControlMode        string   `json:"controlMode"`
-	HistoryExpanded    bool     `json:"historyExpanded"`
-	ScheduleTimestamps []string `json:"scheduleTimestamps"`
-	AwakeSeconds       int      `json:"awakeSeconds"`
+	SleepTime            int      `json:"sleepTime"`
+	MotorAutoStopSeconds int      `json:"motorAutoStopSeconds"`
+	SleepUntil           string   `json:"sleepUntil"`
+	ControlMode          string   `json:"controlMode"`
+	HistoryExpanded      bool     `json:"historyExpanded"`
+	ScheduleTimestamps   []string `json:"scheduleTimestamps"`
+	AwakeSeconds         int      `json:"awakeSeconds"`
+}
+
+// @brief Clamps motor auto-stop setting to the allowed range.
+// @param seconds Desired timeout in seconds.
+// @return Value constrained to 1..60 seconds.
+func clampMotorAutoStopSeconds(seconds int) int {
+	if seconds < 1 {
+		return 1
+	}
+	if seconds > 60 {
+		return 60
+	}
+	return seconds
 }
 
 // @brief Opens/creates the local bbolt state database.
@@ -266,6 +284,12 @@ func (h *ChickenDoor) loadPersistedState() {
 	h.scheduleActive = state.ScheduleActive
 	h.scheduleHistory = append([]ScheduleHistoryEntry(nil), state.ScheduleHistory...)
 	h.sleepTime = state.SleepTime
+	h.motorAutoStopSeconds = state.MotorAutoStopSeconds
+	if h.motorAutoStopSeconds == 0 {
+		h.motorAutoStopSeconds = defaultMotorAutoStopSeconds
+	} else {
+		h.motorAutoStopSeconds = clampMotorAutoStopSeconds(h.motorAutoStopSeconds)
+	}
 	h.sleepUntil = state.SleepUntil
 	h.controlMode = state.ControlMode
 	h.historyExpanded = state.HistoryExpanded
@@ -302,6 +326,7 @@ func (h *ChickenDoor) persistState() {
 		ScheduleActive:       h.scheduleActive,
 		ScheduleHistory:      append([]ScheduleHistoryEntry(nil), h.scheduleHistory...),
 		SleepTime:            h.sleepTime,
+		MotorAutoStopSeconds: h.motorAutoStopSeconds,
 		SleepUntil:           h.sleepUntil,
 		ControlMode:          h.controlMode,
 		HistoryExpanded:      h.historyExpanded,
@@ -338,12 +363,80 @@ func (h *ChickenDoor) persistState() {
 // @return Initialized ChickenDoor instance with a ready-to-use done channel.
 func New(mqttManager *mqtt.Manager) *ChickenDoor {
 	h := &ChickenDoor{
-		mqttManager: mqttManager,
-		db:          openStateDB(),
-		done:        make(chan struct{}),
+		mqttManager:          mqttManager,
+		db:                   openStateDB(),
+		done:                 make(chan struct{}),
+		motorAutoStopSeconds: defaultMotorAutoStopSeconds,
 	}
 	h.loadPersistedState()
 	return h
+}
+
+// @brief Returns true when engine_status indicates movement is still ongoing.
+// @param position Raw engine status text from MQTT.
+// @return True if status looks like moving/opening/closing, otherwise false.
+func isMotorRunningPosition(position string) bool {
+	value := strings.ToLower(strings.TrimSpace(position))
+	if value == "" {
+		return false
+	}
+
+	return strings.Contains(value, "opening") ||
+		strings.Contains(value, "closing") ||
+		strings.Contains(value, "moving") ||
+		strings.Contains(value, "run") ||
+		strings.Contains(value, "fahrt") ||
+		strings.Contains(value, "laeuft")
+}
+
+// @brief Enforces automatic motor stop after the configured timeout.
+//
+// When engine_status still indicates movement after motorAutoStopSeconds, this
+// method publishes "stop" to the engine topic and clears the running timer.
+func (h *ChickenDoor) autoStopTick() {
+	msgs := h.mqttManager.Messages()
+	position := toString(msgs["engine_status"])
+	running := isMotorRunningPosition(position)
+
+	h.mu.Lock()
+	timeoutSeconds := clampMotorAutoStopSeconds(h.motorAutoStopSeconds)
+	h.motorAutoStopSeconds = timeoutSeconds
+
+	if !running {
+		h.motorRunningSince = time.Time{}
+		h.mu.Unlock()
+		return
+	}
+
+	now := time.Now()
+	if h.motorRunningSince.IsZero() {
+		h.motorRunningSince = now
+		h.mu.Unlock()
+		return
+	}
+
+	runningSince := h.motorRunningSince
+	shouldStop := now.Sub(runningSince) >= time.Duration(timeoutSeconds)*time.Second
+	if shouldStop {
+		h.motorRunningSince = time.Time{}
+	}
+	h.mu.Unlock()
+
+	if !shouldStop {
+		return
+	}
+
+	if err := h.mqttManager.Publish(fmt.Sprintf("%s/engine", nanoSetPrefix), "stop"); err != nil {
+		log.Printf("[chickendoor-autostop] publish stop failed after %ds: %v", timeoutSeconds, err)
+		return
+	}
+
+	log.Printf("[chickendoor-autostop] auto-stop sent after %ds (engine_status=%s)", timeoutSeconds, position)
+
+	h.mu.Lock()
+	h.lastStatusAction = "stop"
+	h.mu.Unlock()
+	h.persistState()
 }
 
 // @brief Parses a time-of-day string relative to the base day and timezone.
@@ -852,13 +945,14 @@ func (h *ChickenDoor) UIStateHandler(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		h.mu.Lock()
 		response := map[string]any{
-			"sleepTime":          h.sleepTime,
-			"sleepUntil":         h.sleepUntil,
-			"controlMode":        h.controlMode,
-			"historyExpanded":    h.historyExpanded,
-			"scheduleTimestamps": append([]string(nil), h.scheduleTimestamps...),
-			"awakeSeconds":       h.scheduleAwakeSeconds,
-			"scheduleActive":     h.scheduleActive,
+			"sleepTime":            h.sleepTime,
+			"motorAutoStopSeconds": h.motorAutoStopSeconds,
+			"sleepUntil":           h.sleepUntil,
+			"controlMode":          h.controlMode,
+			"historyExpanded":      h.historyExpanded,
+			"scheduleTimestamps":   append([]string(nil), h.scheduleTimestamps...),
+			"awakeSeconds":         h.scheduleAwakeSeconds,
+			"scheduleActive":       h.scheduleActive,
 		}
 		h.mu.Unlock()
 		jsonResponse(w, response)
@@ -872,6 +966,9 @@ func (h *ChickenDoor) UIStateHandler(w http.ResponseWriter, r *http.Request) {
 
 		h.mu.Lock()
 		h.sleepTime = req.SleepTime
+		if req.MotorAutoStopSeconds > 0 {
+			h.motorAutoStopSeconds = clampMotorAutoStopSeconds(req.MotorAutoStopSeconds)
+		}
 		h.sleepUntil = strings.TrimSpace(req.SleepUntil)
 		if req.ControlMode == "manual" || req.ControlMode == "schedule" {
 			h.controlMode = req.ControlMode
@@ -939,6 +1036,18 @@ func (h *ChickenDoor) SetHandler(w http.ResponseWriter, r *http.Request) {
 		topic = fmt.Sprintf("%s/sleepms", nanoSetPrefix)
 		payload = toInt(req.Value) * 1000
 	}
+
+	if req.Key == "engine" {
+		command := strings.ToLower(strings.TrimSpace(toString(req.Value)))
+		h.mu.Lock()
+		if command == "open" || command == "close" {
+			h.motorRunningSince = time.Now()
+		} else if command == "stop" {
+			h.motorRunningSince = time.Time{}
+		}
+		h.mu.Unlock()
+	}
+
 	if err := h.mqttManager.Publish(topic, payload); err != nil {
 		jsonResponse(w, map[string]any{"ok": false, "error": err.Error()})
 		return
@@ -1072,6 +1181,7 @@ func (cd *ChickenDoor) runLoop() {
 			return
 		case <-ticker.C:
 			cd.scheduleTick()
+			cd.autoStopTick()
 		}
 	}
 }
