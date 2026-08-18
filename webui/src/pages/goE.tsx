@@ -1,15 +1,30 @@
-import React, { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 
 const API = 'http://192.168.188.97:8083/api/wallbox'
 
+type WallboxStatus = {
+  amp?: number
+  frc?: number
+  car?: number
+}
+
+type Feedback = {
+  type: 'success' | 'error'
+  msg: string
+}
+
+type SetResponse = {
+  ok?: boolean
+  error?: string
+}
+
 export default function GoE() {
-  const [status, setStatus] = useState(null)
+  const [status, setStatus] = useState<WallboxStatus | null>(null)
   const [sending, setSending] = useState(false)
-  const [feedback, setFeedback] = useState(null)
+  const [feedback, setFeedback] = useState<Feedback | null>(null)
   const [timeFrom, setTimeFrom] = useState('00:00')
   const [timeTo, setTimeTo] = useState('00:00')
 
-  // Aktuellen Status laden
   const loadStatus = async () => {
     try {
       const r = await fetch(`${API}/status`)
@@ -23,8 +38,7 @@ export default function GoE() {
     return () => clearInterval(t)
   }, [])
 
-  // SET-Befehl an API senden
-  const sendSet = async (key, value) => {
+  const sendSet = async (key: string, value: unknown) => {
     setSending(true)
     setFeedback(null)
     try {
@@ -33,22 +47,23 @@ export default function GoE() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key, value }),
       })
-      const data = await r.json()
+      const data: SetResponse = await r.json()
       if (data.ok) {
-        setFeedback({ type: 'success', msg: `✅ ${key} = ${value} gesendet` })
+        setFeedback({ type: 'success', msg: `✅ ${key} = ${String(value)} gesendet` })
       } else {
         setFeedback({ type: 'error', msg: `❌ ${data.error}` })
       }
       setTimeout(loadStatus, 1000)
     } catch (err) {
-      setFeedback({ type: 'error', msg: `❌ Fehler: ${err.message}` })
+      const message = err instanceof Error ? err.message : String(err)
+      setFeedback({ type: 'error', msg: `❌ Fehler: ${message}` })
     } finally {
       setSending(false)
     }
   }
 
-  const frcLabels = { 0: 'Neutral', 1: 'Aus (Idle)', 2: 'Laden erzwingen' }
-  const carLabels = { 1: 'Kein Fahrzeug', 2: 'Laden', 3: 'Warten', 4: 'Fertig' }
+  const frcLabels: Record<number, string> = { 0: 'Neutral', 1: 'Aus (Idle)', 2: 'Laden erzwingen' }
+  const carLabels: Record<number, string> = { 1: 'Kein Fahrzeug', 2: 'Laden', 3: 'Warten', 4: 'Fertig' }
 
   const cardStyle = {
     background: '#fff',
@@ -77,7 +92,6 @@ export default function GoE() {
         go-eCharger Einstellungen per MQTT setzen
       </p>
 
-      {/* Feedback */}
       {feedback && (
         <div style={{
           padding: '10px 16px',
@@ -91,111 +105,73 @@ export default function GoE() {
         </div>
       )}
 
-      {/* Aktueller Status */}
       <div style={{ ...cardStyle, marginBottom: 16 }}>
         <h3 style={{ marginTop: 0, color: '#374151' }}>📊 Aktueller Status</h3>
         {status ? (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-            <StatusItem label="Ladestrom" value={`${status.amp} A`} />
-            <StatusItem label="Modus" value={frcLabels[status.frc] ?? status.frc} />
-            <StatusItem label="Auto" value={carLabels[status.car] ?? status.car} />
+            <StatusItem label="Ladestrom" value={`${status.amp ?? '—'} A`} />
+            <StatusItem label="Modus" value={status.frc === undefined ? '—' : frcLabels[status.frc] ?? status.frc} />
+            <StatusItem label="Auto" value={status.car === undefined ? '—' : carLabels[status.car] ?? status.car} />
           </div>
         ) : (
           <p style={{ color: '#9ca3af' }}>Lade Status…</p>
         )}
       </div>
 
-      {/* Ladestrom setzen */}
       <div style={{ ...cardStyle, marginBottom: 16 }}>
         <h3 style={{ marginTop: 0, color: '#374151' }}>⚡ Ladestrom (amp)</h3>
-        <p style={{ color: '#6b7280', fontSize: 14, margin: '0 0 12px' }}>
-          Strom in Ampere setzen (6–16 A)
-        </p>
+        <p style={{ color: '#6b7280', fontSize: 14, margin: '0 0 12px' }}>Strom in Ampere setzen (6–16 A)</p>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {[6, 8, 10, 12, 14, 16].map(a => (
-            <button
-              key={a}
-              style={btnStyle(status?.amp === a ? '#1d4ed8' : '#3b82f6')}
-              disabled={sending}
-              onClick={() => sendSet('amp', a)}
-            >
-              {a} A
-            </button>
+            <button key={a} style={btnStyle(status?.amp === a ? '#1d4ed8' : '#3b82f6')} disabled={sending} onClick={() => sendSet('amp', a)}>{a} A</button>
           ))}
         </div>
       </div>
 
-      {/* Lademodus setzen */}
       <div style={{ ...cardStyle, marginBottom: 16 }}>
         <h3 style={{ marginTop: 0, color: '#374151' }}>🔌 Lademodus (frc)</h3>
-        <p style={{ color: '#6b7280', fontSize: 14, margin: '0 0 12px' }}>
-          Force-State der Wallbox steuern
-        </p>
+        <p style={{ color: '#6b7280', fontSize: 14, margin: '0 0 12px' }}>Force-State der Wallbox steuern</p>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button style={btnStyle('#6b7280')} disabled={sending} onClick={() => sendSet('frc', 0)}>
-            Neutral (0)
-          </button>
-          <button style={btnStyle('#ef4444')} disabled={sending} onClick={() => sendSet('frc', 1)}>
-            Aus / Idle (1)
-          </button>
-          <button style={btnStyle('#10b981')} disabled={sending} onClick={() => sendSet('frc', 2)}>
-            Laden erzwingen (2)
-          </button>
+          <button style={btnStyle('#6b7280')} disabled={sending} onClick={() => sendSet('frc', 0)}>Neutral (0)</button>
+          <button style={btnStyle('#ef4444')} disabled={sending} onClick={() => sendSet('frc', 1)}>Aus / Idle (1)</button>
+          <button style={btnStyle('#10b981')} disabled={sending} onClick={() => sendSet('frc', 2)}>Laden erzwingen (2)</button>
         </div>
       </div>
 
-      {/* Phasenumschaltung */}
       <div style={{ ...cardStyle, marginBottom: 16 }}>
         <h3 style={{ marginTop: 0, color: '#374151' }}>🔄 Phasenumschaltung (psm)</h3>
-        <p style={{ color: '#6b7280', fontSize: 14, margin: '0 0 12px' }}>
-          1-phasig oder 3-phasig laden
-        </p>
+        <p style={{ color: '#6b7280', fontSize: 14, margin: '0 0 12px' }}>1-phasig oder 3-phasig laden</p>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button style={btnStyle('#8b5cf6')} disabled={sending} onClick={() => sendSet('psm', 1)}>
-            1-phasig
-          </button>
-          <button style={btnStyle('#8b5cf6')} disabled={sending} onClick={() => sendSet('psm', 2)}>
-            3-phasig
-          </button>
+          <button style={btnStyle('#8b5cf6')} disabled={sending} onClick={() => sendSet('psm', 1)}>1-phasig</button>
+          <button style={btnStyle('#8b5cf6')} disabled={sending} onClick={() => sendSet('psm', 2)}>3-phasig</button>
         </div>
       </div>
 
-      {/* Zeitfenster setzen (nur Uhrzeit, 0-24) */}
       <div style={{ ...cardStyle, marginBottom: 16 }}>
         <h3 style={{ marginTop: 0, color: '#374151' }}>⏱️ Zeitfenster setzen</h3>
-        <p style={{ color: '#6b7280', fontSize: 14, margin: '0 0 12px' }}>
-          Zwei Uhrzeiten (HH:MM), unabhängig vom Datum
-        </p>
+        <p style={{ color: '#6b7280', fontSize: 14, margin: '0 0 12px' }}>Zwei Uhrzeiten (HH:MM), unabhängig vom Datum</p>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <label style={{ display: 'flex', flexDirection: 'column', fontSize: 12, color: '#6b7280' }}>
-            Von
+          <label style={{ display: 'flex', flexDirection: 'column', fontSize: 12, color: '#6b7280' }}>Von
             <input type="time" value={timeFrom} onChange={e => setTimeFrom(e.target.value)} style={{ marginTop: 6, padding: '6px 8px', borderRadius: 6, border: '1px solid #e5e7eb' }} />
           </label>
-          <label style={{ display: 'flex', flexDirection: 'column', fontSize: 12, color: '#6b7280' }}>
-            Bis
+          <label style={{ display: 'flex', flexDirection: 'column', fontSize: 12, color: '#6b7280' }}>Bis
             <input type="time" value={timeTo} onChange={e => setTimeTo(e.target.value)} style={{ marginTop: 6, padding: '6px 8px', borderRadius: 6, border: '1px solid #e5e7eb' }} />
           </label>
-          <button
-            style={btnStyle('#f59e0b')}
-            disabled={sending}
-            onClick={() => sendSet('ato', { from: timeFrom, to: timeTo })}
-          >
-            Zeitfenster senden
-          </button>
+          <button style={btnStyle('#f59e0b')} disabled={sending} onClick={() => sendSet('ato', { from: timeFrom, to: timeTo })}>Zeitfenster senden</button>
         </div>
       </div>
     </div>
   )
 }
 
-function StatusItem({ label, value }) {
+type StatusItemProps = {
+  label: string
+  value: string | number
+}
+
+function StatusItem({ label, value }: StatusItemProps) {
   return (
-    <div style={{
-      background: '#f9fafb',
-      borderRadius: 8,
-      padding: '10px 14px',
-      textAlign: 'center',
-    }}>
+    <div style={{ background: '#f9fafb', borderRadius: 8, padding: '10px 14px', textAlign: 'center' }}>
       <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>{label}</div>
       <div style={{ fontSize: 18, fontWeight: 700, color: '#111827' }}>{value}</div>
     </div>

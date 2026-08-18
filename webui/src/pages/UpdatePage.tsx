@@ -1,6 +1,18 @@
-import React, { useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 
-function buildSystemUpdateUrls() {
+type UpdateResult = {
+  step: string
+  ok: boolean
+  stdout?: string
+  stderr?: string
+}
+
+type UpdateLog = {
+  ok: boolean
+  results?: UpdateResult[]
+}
+
+function buildSystemUpdateUrls(): string[] {
   const protocol = window.location.protocol
   const host = window.location.hostname
   const configuredBase = import.meta.env.VITE_SYSTEM_UPDATE_BASE_URL?.trim()
@@ -18,7 +30,7 @@ function buildSystemUpdateUrls() {
     'http://127.0.0.1:8090',
   ].filter(Boolean)
 
-  const unique = []
+  const unique: string[] = []
   for (const base of candidates) {
     const normalized = String(base).replace(/\/$/, '')
     if (!unique.includes(normalized)) {
@@ -31,7 +43,7 @@ function buildSystemUpdateUrls() {
 
 export default function UpdatePage() {
   const [updating, setUpdating] = useState(false)
-  const [updateLog, setUpdateLog] = useState(null)
+  const [updateLog, setUpdateLog] = useState<UpdateLog | null>(null)
 
   const updateUrls = useMemo(() => buildSystemUpdateUrls(), [])
   const updateUrl = updateUrls[0]
@@ -63,7 +75,6 @@ export default function UpdatePage() {
         Nutzt den externen Host-Service auf Port 8090.
       </p>
 
-      {/* System Update */}
       <div style={{ ...cardStyle, borderLeft: '4px solid #f59e0b' }}>
         <h3 style={{ marginTop: 0, color: '#374151' }}>🚀 System Update</h3>
         <p style={{ color: '#6b7280', fontSize: 14, margin: '0 0 12px' }}>
@@ -78,12 +89,12 @@ export default function UpdatePage() {
           onClick={async () => {
             setUpdating(true)
             setUpdateLog(null)
-            let lastFetchError = null
+            let lastFetchError: unknown = null
             try {
               for (const candidateUrl of updateUrls) {
                 try {
                   const r = await fetch(candidateUrl, { method: 'POST' })
-                  const data = await r.json()
+                  const data: UpdateLog = await r.json()
                   setUpdateLog(data)
                   return
                 } catch (err) {
@@ -131,12 +142,12 @@ export default function UpdatePage() {
             <div style={{ fontWeight: 600, marginBottom: 6, color: updateLog.ok ? '#065f46' : '#991b1b' }}>
               {updateLog.ok ? '✅ Update erfolgreich!' : '❌ Update fehlgeschlagen'}
             </div>
-            {updateLog.results?.map((r, i) => (
-              <div key={i} style={{ marginBottom: 6 }}>
-                <span style={{ fontWeight: 600 }}>{r.step}:</span>{' '}
-                <span style={{ color: r.ok ? '#065f46' : '#991b1b' }}>{r.ok ? '✓' : '✗'}</span>
-                {r.stdout && <pre style={{ margin: '4px 0', fontSize: 12, whiteSpace: 'pre-wrap', color: '#374151' }}>{r.stdout}</pre>}
-                {r.stderr && <pre style={{ margin: '4px 0', fontSize: 12, whiteSpace: 'pre-wrap', color: '#991b1b' }}>{r.stderr}</pre>}
+            {updateLog.results?.map((result, index) => (
+              <div key={index} style={{ marginBottom: 6 }}>
+                <span style={{ fontWeight: 600 }}>{result.step}:</span>{' '}
+                <span style={{ color: result.ok ? '#065f46' : '#991b1b' }}>{result.ok ? '✓' : '✗'}</span>
+                {result.stdout && <pre style={{ margin: '4px 0', fontSize: 12, whiteSpace: 'pre-wrap', color: '#374151' }}>{result.stdout}</pre>}
+                {result.stderr && <pre style={{ margin: '4px 0', fontSize: 12, whiteSpace: 'pre-wrap', color: '#991b1b' }}>{result.stderr}</pre>}
               </div>
             ))}
           </div>

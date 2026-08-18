@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { AreaChartCard } from '../components/Charts.jsx'
+import { AreaChartCard } from '../components/Charts'
 
 export default function Inverter() {
   const [summary, setSummary] = useState(null)

@@ -189,7 +189,7 @@ function pickNumber(...values) {
   return null
 }
 
-function MetricPill({ label, value, unit }) {
+function MetricPill({ label, value, unit = '' }) {
   return (
     <div className="eta-pill">
       <span className="eta-pill-label">{label}</span>

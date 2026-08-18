@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react'
+import type { CSSProperties } from 'react'
+import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 
-const linkStyle = ({ isActive }) => ({
+const linkStyle = ({ isActive }: { isActive: boolean }): CSSProperties => ({
   display: 'block',
   padding: '10px 12px',
   borderRadius: 6,

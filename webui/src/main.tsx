@@ -1,14 +1,14 @@
-import React from 'react'
+import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createBrowserRouter, RouterProvider } from 'react-router-dom'
-import App from './App.jsx'
-import DashboardHome from './pages/DashboardHome.jsx'
-import EnergyFlow from './pages/EnergyFlow.jsx'
-import Heating from './pages/Heating.jsx'
-import Grafana from './pages/Grafana.jsx'
-import UpdatePage from './pages/UpdatePage.jsx'
-import GoE from './pages/goE.jsx'
-import Huehnerklappe from './pages/Huehnerklappe.jsx'
+import App from './App'
+import DashboardHome from './pages/DashboardHome'
+import EnergyFlow from './pages/EnergyFlow'
+import Heating from './pages/Heating'
+import Grafana from './pages/Grafana'
+import UpdatePage from './pages/UpdatePage'
+import GoE from './pages/goE'
+import Huehnerklappe from './pages/Huehnerklappe'
 
 const router = createBrowserRouter([
   {
@@ -26,8 +26,14 @@ const router = createBrowserRouter([
   },
 ])
 
-createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
+const rootElement = document.getElementById('root')
+
+if (!rootElement) {
+  throw new Error('Root element not found')
+}
+
+createRoot(rootElement).render(
+  <StrictMode>
     <RouterProvider router={router} />
-  </React.StrictMode>
+  </StrictMode>
 )

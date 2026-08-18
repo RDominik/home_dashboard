@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 
 export default function Grafana() {
   const [url, setUrl] = useState('http://192.168.188.97:3000/public-dashboards/12b8f580467f4aa7b432928f0a4ec2be?refresh=5s&from=now-6h&to=now&timezone=browser')
@@ -26,7 +26,7 @@ export default function Grafana() {
         )}
       </div>
       <div style={{marginTop:8, color:'#666', fontSize:12}}>
-        Hinweis: Das eingebettete Dashboard muss als Public Dashboard freigegeben sein. Bei Mixed‑Content kann HTTPS für die WebUI oder einen Reverse‑Proxy nötig sein.
+        Hinweis: Das eingebettete Dashboard muss als Public Dashboard freigegeben sein. Bei Mixed‑Content kann HTTPS für die WebUI oder einen Reverse-Proxy nötig sein.
       </div>
     </div>
   )

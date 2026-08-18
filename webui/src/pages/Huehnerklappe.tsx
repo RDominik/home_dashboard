@@ -1,24 +1,83 @@
-import React, { useState, useEffect } from 'react'
+import type { CSSProperties } from 'react'
+import { useEffect, useState } from 'react'
 
 const API = '/api/huehnerklappe'
+
+type ControlMode = 'manual' | 'schedule'
+
+type Feedback = {
+  type: 'success' | 'error'
+  msg: string
+}
+
+type ScheduleHistoryEntry = {
+  sleepSeconds?: number
+  batteryPercent?: string
+  sleepCommandAtMs?: number
+  sleepingAtMs?: number
+  wokeUpAtMs?: number
+}
+
+type HuehnerklappeStatus = {
+  position?: string
+  lastAction?: string
+  error?: string
+  battery?: string
+  wakeReason?: string
+  controllerState?: string
+  sleepState?: string
+  ip?: string
+  charging?: string
+  scheduleActive?: boolean
+  scheduleTimezone?: string
+  serverNowMs?: number
+  sleepCommandAtMs?: number
+  sleepingAtMs?: number
+  onlineAtMs?: number
+  wakeDeltaMs?: number
+  scheduleHistory?: ScheduleHistoryEntry[]
+}
+
+type UiStateResponse = {
+  sleepTime?: number
+  motorAutoStopSeconds?: number
+  sleepUntil?: string
+  controlMode?: ControlMode
+  scheduleActive?: boolean
+  scheduleTimestamps?: string[]
+  awakeSeconds?: number
+  historyExpanded?: boolean
+}
+
+type SetCommandResponse = {
+  ok?: boolean
+  error?: string
+  stored?: boolean
+}
+
+type PickerDraft = {
+  hour: string
+  minute: string
+  second: string
+}
 
 export default function Huehnerklappe() {
   const [sleepTime, setSleepTime] = useState(60) // default 60 Sekunden
   const [motorAutoStopSeconds, setMotorAutoStopSeconds] = useState(15)
   const [sleepUntil, setSleepUntil] = useState('')
-  const [controlMode, setControlMode] = useState('manual')
+  const [controlMode, setControlMode] = useState<ControlMode>('manual')
   const [scheduleActive, setScheduleActive] = useState(false)
   const [scheduleTimestamps, setScheduleTimestamps] = useState(['06:30:00', '12:00:00', '18:30:00'])
   const [awakeSeconds, setAwakeSeconds] = useState(30)
-  const [pickerIndex, setPickerIndex] = useState(null)
-  const [pickerDraft, setPickerDraft] = useState({ hour: '00', minute: '00', second: '00' })
+  const [pickerIndex, setPickerIndex] = useState<number | null>(null)
+  const [pickerDraft, setPickerDraft] = useState<PickerDraft>({ hour: '00', minute: '00', second: '00' })
   const [historyExpanded, setHistoryExpanded] = useState(false)
-  const [status, setStatus] = useState(null)
+  const [status, setStatus] = useState<HuehnerklappeStatus | null>(null)
   const [sending, setSending] = useState(false)
-  const [feedback, setFeedback] = useState(null)
-  const [battery, setBattery] = useState(null)
-  const [wakeReason, setWakeReason] = useState(null)
-  const [charging, setCharging] = useState(null)
+  const [feedback, setFeedback] = useState<Feedback | null>(null)
+  const [battery, setBattery] = useState<string | null>(null)
+  const [wakeReason, setWakeReason] = useState<string | null>(null)
+  const [charging, setCharging] = useState<string | null>(null)
   const [clockOffsetMs, setClockOffsetMs] = useState(0)
   const [uiLoaded, setUiLoaded] = useState(false)
 
@@ -27,7 +86,7 @@ export default function Huehnerklappe() {
     try {
       const r = await fetch(`${API}/status`)
       if (r.ok) {
-        const data = await r.json()
+        const data: HuehnerklappeStatus = await r.json()
         setStatus(data)
         setBattery(data.battery ?? null)
         setWakeReason(data.wakeReason ?? null)
@@ -49,7 +108,7 @@ export default function Huehnerklappe() {
         return
       }
 
-      const data = await r.json()
+      const data: UiStateResponse = await r.json()
 
       if (Number.isFinite(data.sleepTime)) {
         setSleepTime(Math.max(1, Math.min(86400, Number(data.sleepTime))))
@@ -69,7 +128,7 @@ export default function Huehnerklappe() {
       }
       if (Array.isArray(data.scheduleTimestamps) && data.scheduleTimestamps.length > 0) {
         const cleaned = data.scheduleTimestamps
-          .map(v => String(v).trim())
+          .map((v) => String(v).trim())
           .filter(Boolean)
           .slice(0, 20)
         if (cleaned.length > 0) {
@@ -132,7 +191,7 @@ export default function Huehnerklappe() {
     return () => clearTimeout(timer)
   }, [uiLoaded, sleepTime, motorAutoStopSeconds, sleepUntil, controlMode, scheduleActive, scheduleTimestamps, awakeSeconds, historyExpanded])
 
-  const sendCommand = async (key, value = null, successMessage = null) => {
+  const sendCommand = async (key: string, value: string | number | null = null, successMessage: string | null = null) => {
     setSending(true)
     setFeedback(null)
     try {
@@ -141,7 +200,7 @@ export default function Huehnerklappe() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key, value }),
       })
-      const data = await r.json()
+      const data: SetCommandResponse = await r.json()
       if (data.ok) {
         setFeedback({ type: 'success', msg: successMessage ?? `✅ ${key} gesendet` })
       } else {
@@ -149,13 +208,14 @@ export default function Huehnerklappe() {
       }
       setTimeout(loadStatus, 1000)
     } catch (err) {
-      setFeedback({ type: 'error', msg: `❌ Fehler: ${err.message}` })
+      const message = err instanceof Error ? err.message : String(err)
+      setFeedback({ type: 'error', msg: `❌ Fehler: ${message}` })
     } finally {
       setSending(false)
     }
   }
 
-  const sleepSecondsUntil = (targetTime) => {
+  const sleepSecondsUntil = (targetTime: string): number | null => {
     const parts = targetTime.split(':').map(Number)
     if (parts.length < 2 || parts.some(Number.isNaN)) {
       return null
@@ -188,7 +248,7 @@ export default function Huehnerklappe() {
     await sendCommand('engine/sleep', seconds, `✅ Sleep bis ${sleepUntil} gesendet (${seconds}s)`)
   }
 
-  const updateScheduleTimestamp = (index, value) => {
+  const updateScheduleTimestamp = (index: number, value: string) => {
     setScheduleTimestamps(prev => {
       const next = [...prev]
       next[index] = value
@@ -205,7 +265,7 @@ export default function Huehnerklappe() {
     })
   }
 
-  const removeScheduleTimestamp = (index) => {
+  const removeScheduleTimestamp = (index: number) => {
     setScheduleTimestamps(prev => {
       if (prev.length <= 1) {
         return prev
@@ -214,9 +274,9 @@ export default function Huehnerklappe() {
     })
   }
 
-  const pad2 = (value) => String(value).padStart(2, '0')
+  const pad2 = (value: number) => String(value).padStart(2, '0')
 
-  const parseTimestampToDraft = (timestamp) => {
+  const parseTimestampToDraft = (timestamp: string) => {
     const [hour = '00', minute = '00', second = '00'] = String(timestamp || '').split(':')
     return {
       hour: pad2(Number(hour) || 0),
@@ -225,9 +285,9 @@ export default function Huehnerklappe() {
     }
   }
 
-  const draftToTimestamp = (draft) => `${draft.hour}:${draft.minute}:${draft.second}`
+  const draftToTimestamp = (draft: PickerDraft) => `${draft.hour}:${draft.minute}:${draft.second}`
 
-  const openTimestampPicker = (index) => {
+  const openTimestampPicker = (index: number) => {
     setPickerDraft(parseTimestampToDraft(scheduleTimestamps[index]))
     setPickerIndex(index)
   }
@@ -241,7 +301,7 @@ export default function Huehnerklappe() {
     setPickerIndex(null)
   }
 
-  const sendSleepSchedule = async (sourceTimestamps = scheduleTimestamps, silent = false, active = controlMode === 'schedule') => {
+  const sendSleepSchedule = async (sourceTimestamps: string[] = scheduleTimestamps, silent = false, active = controlMode === 'schedule') => {
     const resolvedSource = Array.isArray(sourceTimestamps) ? sourceTimestamps : scheduleTimestamps
     const timestamps = resolvedSource.map(v => v.trim())
     if (timestamps.some(v => !v)) {
@@ -266,7 +326,7 @@ export default function Huehnerklappe() {
           active,
         }),
       })
-      const data = await r.json()
+      const data: SetCommandResponse = await r.json()
       if (data.ok) {
         setScheduleActive(active)
         if (!silent && data.stored) {
@@ -281,8 +341,9 @@ export default function Huehnerklappe() {
         }
       }
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
       if (!silent) {
-        setFeedback({ type: 'error', msg: `❌ Fehler: ${err.message}` })
+        setFeedback({ type: 'error', msg: `❌ Fehler: ${message}` })
       }
     } finally {
       setSending(false)
@@ -299,19 +360,19 @@ export default function Huehnerklappe() {
     setControlMode('schedule')
   }
 
-  const setScheduleEnabled = async (nextActive) => {
+  const setScheduleEnabled = async (nextActive: boolean) => {
     setScheduleActive(nextActive)
     await sendSleepSchedule(scheduleTimestamps, false, nextActive)
   }
 
-  const cardStyle = {
+  const cardStyle: CSSProperties = {
     background: '#fff',
     borderRadius: 10,
     padding: '20px 24px',
     boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
   }
 
-  const btnStyle = (color = '#3b82f6') => ({
+  const btnStyle = (color = '#3b82f6'): CSSProperties => ({
     padding: '10px 20px',
     borderRadius: 8,
     border: 'none',
@@ -324,7 +385,7 @@ export default function Huehnerklappe() {
     transition: 'opacity 0.2s',
   })
 
-  const ghostBtnStyle = {
+  const ghostBtnStyle: CSSProperties = {
     padding: '8px 14px',
     borderRadius: 10,
     border: '1px solid #c7d2fe',
@@ -336,7 +397,7 @@ export default function Huehnerklappe() {
     opacity: sending ? 0.6 : 1,
   }
 
-  const removeBtnStyle = {
+  const removeBtnStyle: CSSProperties = {
     padding: '8px 12px',
     borderRadius: 10,
     border: '1px solid #fecaca',
@@ -374,7 +435,7 @@ export default function Huehnerklappe() {
     sendColor: '#047857',
   }
 
-  const modeSwitchButton = (mode) => ({
+  const modeSwitchButton = (mode: ControlMode) => ({
     padding: '8px 14px',
     borderRadius: 999,
     border: controlMode === mode ? '1px solid #047857' : '1px solid #d1d5db',
@@ -386,7 +447,7 @@ export default function Huehnerklappe() {
     opacity: sending ? 0.6 : 1,
   })
 
-  const scheduleToggleTrackStyle = {
+  const scheduleToggleTrackStyle: CSSProperties = {
     position: 'relative',
     width: 58,
     height: 32,
@@ -397,7 +458,7 @@ export default function Huehnerklappe() {
     boxShadow: scheduleActive ? 'inset 0 0 0 1px rgba(4, 120, 87, 0.35)' : 'inset 0 0 0 1px rgba(148, 163, 184, 0.35)',
   }
 
-  const scheduleToggleThumbStyle = {
+  const scheduleToggleThumbStyle: CSSProperties = {
     position: 'absolute',
     top: 3,
     left: scheduleActive ? 29 : 3,
@@ -409,13 +470,13 @@ export default function Huehnerklappe() {
     transition: 'left 0.2s ease',
   }
 
-  const sectionStateStyle = (isActive) => ({
+  const sectionStateStyle = (isActive: boolean): CSSProperties => ({
     opacity: isActive ? 1 : 0.45,
     filter: isActive ? 'none' : 'grayscale(0.3)',
     pointerEvents: isActive ? 'auto' : 'none',
   })
 
-  const formatStatusTimestamp = (unixMs) => {
+  const formatStatusTimestamp = (unixMs: number | undefined) => {
     if (Number.isFinite(unixMs) && unixMs > 0) {
       const correctedMs = unixMs + clockOffsetMs
       return new Intl.DateTimeFormat('de-DE', {
@@ -438,7 +499,7 @@ export default function Huehnerklappe() {
     return Array.from({ length: 20 }, (_, idx) => entries[idx] ?? null)
   })()
 
-  const scheduleEntryState = (entry) => {
+  const scheduleEntryState = (entry: ScheduleHistoryEntry | null) => {
     if (!entry) {
       return 'leer'
     }
@@ -823,7 +884,12 @@ export default function Huehnerklappe() {
   )
 }
 
-function StatusItem({ label, value }) {
+type StatusItemProps = {
+  label: string
+  value: string | number
+}
+
+function StatusItem({ label, value }: StatusItemProps) {
   return (
     <div style={{
       background: '#f9fafb',

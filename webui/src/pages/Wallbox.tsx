@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { LineChartCard } from '../components/Charts.jsx'
+import { LineChartCard } from '../components/Charts'
 
 export default function Wallbox() {
   const [status, setStatus] = useState(null)
@@ -41,7 +41,7 @@ export default function Wallbox() {
   )
 }
 
-function Card({ title, value, unit }){
+function Card({ title, value, unit = '' }){
   return (
     <div style={{border:'1px solid #eee', borderRadius:8, padding:12}}>
       <div style={{color:'#666', fontSize:12}}>{title}</div>
