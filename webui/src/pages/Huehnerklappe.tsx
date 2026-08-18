@@ -91,7 +91,7 @@ export default function Huehnerklappe() {
         setBattery(data.battery ?? null)
         setWakeReason(data.wakeReason ?? null)
         setCharging(data.charging ?? null)
-        if (Number.isFinite(data.serverNowMs)) {
+        if (typeof data.serverNowMs === 'number' && Number.isFinite(data.serverNowMs)) {
           setClockOffsetMs(Date.now() - data.serverNowMs)
         }
         if (typeof data.scheduleActive === 'boolean') {
@@ -477,7 +477,7 @@ export default function Huehnerklappe() {
   })
 
   const formatStatusTimestamp = (unixMs: number | undefined) => {
-    if (Number.isFinite(unixMs) && unixMs > 0) {
+    if (typeof unixMs === 'number' && Number.isFinite(unixMs) && unixMs > 0) {
       const correctedMs = unixMs + clockOffsetMs
       return new Intl.DateTimeFormat('de-DE', {
         year: 'numeric',
@@ -503,13 +503,13 @@ export default function Huehnerklappe() {
     if (!entry) {
       return 'leer'
     }
-    if (Number.isFinite(entry.wokeUpAtMs) && entry.wokeUpAtMs > 0) {
+    if (typeof entry.wokeUpAtMs === 'number' && Number.isFinite(entry.wokeUpAtMs) && entry.wokeUpAtMs > 0) {
       return 'abgeschlossen'
     }
-    if (Number.isFinite(entry.sleepingAtMs) && entry.sleepingAtMs > 0) {
+    if (typeof entry.sleepingAtMs === 'number' && Number.isFinite(entry.sleepingAtMs) && entry.sleepingAtMs > 0) {
       return 'schlaeft'
     }
-    if (Number.isFinite(entry.sleepCommandAtMs) && entry.sleepCommandAtMs > 0) {
+    if (typeof entry.sleepCommandAtMs === 'number' && Number.isFinite(entry.sleepCommandAtMs) && entry.sleepCommandAtMs > 0) {
       return 'gesendet'
     }
     return 'offen'
@@ -544,8 +544,8 @@ export default function Huehnerklappe() {
             <StatusItem label="Akku" value={battery !== null && battery !== '' ? `${battery}%` : '—'} />
             <StatusItem label="Charging" value={charging ?? '—'} />
             <StatusItem label="IP" value={status.ip ?? '—'} />
-            <StatusItem label="Position" value={status.position} />
-            <StatusItem label="Letzte Aktion" value={status.lastAction} />
+            <StatusItem label="Position" value={status.position ?? '—'} />
+            <StatusItem label="Letzte Aktion" value={status.lastAction ?? '—'} />
             <StatusItem label="Controller" value={status.controllerState ?? '—'} />
             <StatusItem label="Sleep-ACK" value={status.sleepState ?? '—'} />
             <StatusItem label="Weckgrund" value={wakeReason ?? '—'} />

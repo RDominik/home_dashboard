@@ -1,7 +1,32 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import './Heating.css'
 
-const TABS = [
+type Tab = { key: string; label: string }
+type DayKey = 'mo' | 'di' | 'mi' | 'do' | 'fr' | 'sa' | 'so'
+type HeatingTime = { von: string; bis: string }
+type HeatingTimes = Record<DayKey, HeatingTime[]>
+
+type EtaObject = { URI: string; StrValue?: string }
+type EtaTree = { Variable?: { Objects?: EtaObject[] } }
+type Metrics = {
+  boiler_temp: number | null
+  boiler_pressure: number | null
+  buffer_top: number | null
+  buffer_bottom: number | null
+  warmwater_storage: number | null
+  return_temp: number | null
+  outside_temp: number | null
+  feed_rate: number | null
+  heating_status: string | null
+  heating_status_extra: string | null
+  burner_status: string | null
+}
+
+type MetricPillProps = { label: string; value: string | number | null; unit?: string }
+type StatusBoxProps = { main: string; sub?: string }
+type MetricsSubpageProps = { d: Metrics }
+
+const TABS: Tab[] = [
   { key: 'kessel', label: 'Kessel' },
   { key: 'puffer', label: 'Puffer' },
   { key: 'hk', label: 'HK' },
@@ -9,7 +34,7 @@ const TABS = [
   { key: 'sys', label: 'Sys' },
 ]
 
-const HK_TABS = [
+const HK_TABS: Tab[] = [
   { key: 'heizen', label: 'Heizen' },
   { key: 'absenken', label: 'Absenken' },
   { key: 'zeitautomatik', label: 'Zeitautomatik' },
@@ -38,7 +63,7 @@ const PANEL_STATUS = {
 }
 
 export default function Heating() {
-  const [d, setD] = useState(null)
+  const [d, setD] = useState<EtaTree | null>(null)
   const [activeTab, setActiveTab] = useState('kessel')
   const [now, setNow] = useState(new Date())
   const metrics = useMemo(() => mapEtaTreeToMetrics(d), [d])
@@ -107,7 +132,7 @@ export default function Heating() {
   )
 }
 
-function pickByURI(objects, ...uris) {
+function pickByURI(objects: EtaObject[] | undefined, ...uris: string[]): string | undefined {
   if (!Array.isArray(objects)) return undefined
   for (const uri of uris) {
     const match = objects.find((o) => o.URI === uri)
@@ -116,7 +141,7 @@ function pickByURI(objects, ...uris) {
   return undefined
 }
 
-function mapEtaTreeToMetrics(tree) {
+function mapEtaTreeToMetrics(tree: EtaTree | null): Metrics {
   if (!tree) return DEFAULT_METRICS
 
   const objs = tree?.Variable?.Objects
@@ -168,7 +193,7 @@ function mapEtaTreeToMetrics(tree) {
   }
 }
 
-function pickString(...values) {
+function pickString(...values: Array<string | null | undefined>): string | null {
   for (const value of values) {
     if (typeof value === 'string' && value.trim() !== '') {
       return value
@@ -177,7 +202,7 @@ function pickString(...values) {
   return null
 }
 
-function pickNumber(...values) {
+function pickNumber(...values: Array<string | number | null | undefined>): number | null {
   for (const value of values) {
     if (value == null) continue
     const normalized = String(value).replace(/\./g, '').replace(',', '.').trim()
@@ -189,7 +214,7 @@ function pickNumber(...values) {
   return null
 }
 
-function MetricPill({ label, value, unit = '' }) {
+function MetricPill({ label, value, unit = '' }: MetricPillProps) {
   return (
     <div className="eta-pill">
       <span className="eta-pill-label">{label}</span>
@@ -201,7 +226,7 @@ function MetricPill({ label, value, unit = '' }) {
   )
 }
 
-function RightActions({ items }) {
+function RightActions({ items }: { items: string[] }) {
   return (
     <div className="eta-actions">
       {items.map((item) => (
@@ -213,7 +238,7 @@ function RightActions({ items }) {
   )
 }
 
-function KesselSubpage({ d }) {
+function KesselSubpage({ d }: MetricsSubpageProps) {
   const status = PANEL_STATUS.kessel
   const pressureValue = d?.boiler_pressure ?? (typeof d?.boiler_temp === 'number' ? d.boiler_temp / 38 : null)
   const pressureText = pressureValue == null ? '' : `${fmt(pressureValue)} bar`
@@ -244,7 +269,7 @@ function KesselSubpage({ d }) {
   )
 }
 
-function PufferSubpage({ d }) {
+function PufferSubpage({ d }: MetricsSubpageProps) {
   const status = PANEL_STATUS.puffer
   const topValue = `${fmt(d?.buffer_top)} C`
   const bottomValue = `${fmt(d?.buffer_bottom)} C`
@@ -273,13 +298,13 @@ function PufferSubpage({ d }) {
   )
 }
 
-function HkSubpage({ d }) {
+function HkSubpage({ d }: MetricsSubpageProps) {
   const [activeHkTab, setActiveHkTab] = useState('heizen')
   const [heizenPermanent, setHeizenPermanent] = useState(false)
-  const [expandedDay, setExpandedDay] = useState('mo')
+  const [expandedDay, setExpandedDay] = useState<DayKey | null>('mo')
   const statusText = pickString(d?.heating_status, d?.burner_status, 'Bereit') ?? 'Bereit'
   const statusSubtext = pickString(d?.heating_status_extra, '')
-  const [heizzzeiten, setHeizzzeiten] = useState({
+  const [heizzzeiten, setHeizzzeiten] = useState<HeatingTimes>({
     mo: [{ von: '06:00', bis: '09:00' }, { von: '16:00', bis: '22:00' }, { von: '', bis: '' }],
     di: [{ von: '06:00', bis: '09:00' }, { von: '16:00', bis: '22:00' }, { von: '', bis: '' }],
     mi: [{ von: '06:00', bis: '09:00' }, { von: '16:00', bis: '22:00' }, { von: '', bis: '' }],
@@ -289,7 +314,7 @@ function HkSubpage({ d }) {
     so: [{ von: '07:00', bis: '21:00' }, { von: '', bis: '' }, { von: '', bis: '' }],
   })
 
-  const days = [
+  const days: Array<{ key: DayKey; label: string }> = [
     { key: 'mo', label: 'Montag' },
     { key: 'di', label: 'Dienstag' },
     { key: 'mi', label: 'Mittwoch' },
@@ -299,21 +324,21 @@ function HkSubpage({ d }) {
     { key: 'so', label: 'Sonntag' },
   ]
 
-  const updateHeizzzeit = (day, idx, field, val) => {
+  const updateHeizzzeit = (day: DayKey, idx: number, field: keyof HeatingTime, val: string) => {
     setHeizzzeiten((prev) => ({
       ...prev,
       [day]: prev[day].map((hz, i) => i === idx ? { ...hz, [field]: val } : hz),
     }))
   }
 
-  const deleteHeizzzeit = (day, idx) => {
+  const deleteHeizzzeit = (day: DayKey, idx: number) => {
     setHeizzzeiten((prev) => ({
       ...prev,
       [day]: prev[day].filter((_, i) => i !== idx),
     }))
   }
 
-  const addHeizzzeit = (day) => {
+  const addHeizzzeit = (day: DayKey) => {
     setHeizzzeiten((prev) => {
       if (prev[day].length >= 3) {
         return prev
@@ -453,7 +478,7 @@ function HkSubpage({ d }) {
   )
 }
 
-function TabStatusBox({ main, sub }) {
+function TabStatusBox({ main, sub }: StatusBoxProps) {
   return (
     <div className="eta-status-box">
       <div className="eta-status-main">{main}</div>
@@ -462,7 +487,7 @@ function TabStatusBox({ main, sub }) {
   )
 }
 
-function EFilterSubpage({ d }) {
+function EFilterSubpage({ d }: MetricsSubpageProps) {
   const status = PANEL_STATUS.efilter
 
   return (
@@ -496,7 +521,7 @@ function SysSubpage() {
   )
 }
 
-function fmt(v) {
+function fmt(v: number | null | undefined): string {
   if (v == null) return '--'
   return new Intl.NumberFormat('de-DE', { maximumFractionDigits: 2 }).format(v)
 }

@@ -169,8 +169,30 @@ const ZapIcon = () => (
   </svg>
 );
 
+type EnergieFluss = {
+  pvProduktion: number
+  hausVerbrauch: number
+  batterieStand: number
+  batterieLaden: number
+  batterieEntladen: number
+  autoLaden: number
+  netzEinspeisung: number
+  netzBezug: number
+}
+
+type FlowNode = 'pv' | 'batterie' | 'haus' | 'auto' | 'netz'
+type FlowKey = 'pv-batterie' | 'pv-haus' | 'haus-auto' | 'batterie-haus' | 'batterie-pv' | 'netz-haus' | 'haus-netz'
+type FlowLineProps = {
+  von: FlowNode
+  nach: FlowNode
+  aktiv: boolean
+  leistung: number
+  farbe?: 'green' | 'red'
+}
+type FlowCoordinates = { x1: number; y1: number; cx: number; cy: number; x2: number; y2: number }
+
 const EnergieFlussVisualisierung = () => {
-  const [energieFluss, setEnergieFluss] = useState({
+  const [energieFluss, setEnergieFluss] = useState<EnergieFluss>({
     pvProduktion: 0,
     hausVerbrauch: 0,
     batterieStand: 0,
@@ -181,7 +203,7 @@ const EnergieFlussVisualisierung = () => {
     netzBezug: 0
   });
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
 
   // API-Endpoint - Passe diese URL an deine API an
   const API_URL = '/api/inverter/summary';
@@ -214,7 +236,7 @@ const EnergieFlussVisualisierung = () => {
         setError(null);
       } catch (err) {
         console.error('Fehler beim Laden der Energiedaten:', err);
-        setError(err.message);
+        setError(err instanceof Error ? err.message : String(err));
         setLoading(false);
       }
     };
@@ -228,9 +250,9 @@ const EnergieFlussVisualisierung = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const FlussLinie = ({ von, nach, aktiv, leistung, farbe = "green" }) => {
+  const FlussLinie = ({ von, nach, aktiv, leistung, farbe = 'green' }: FlowLineProps) => {
     // Start, Kontrollpunkt (für Kurve), Ende
-    const linien = {
+    const linien: Record<FlowKey, FlowCoordinates> = {
       'pv-batterie':   { x1: 275, y1: 100, cx: 200, cy: 50, x2: 150, y2: 100 },
       'pv-haus':       { x1: 312, y1: 150, cx: 350, cy: 220, x2: 312, y2: 280 },
       'haus-auto':     { x1: 275, y1: 300, cx: 200, cy: 260, x2: 150, y2: 300 },
@@ -240,7 +262,7 @@ const EnergieFlussVisualisierung = () => {
       'haus-netz':     { x1: 340, y1: 300, cx: 400, cy: 340, x2: 480, y2: 300 }
     };
 
-    const linie = linien[`${von}-${nach}`];
+    const linie = linien[`${von}-${nach}` as FlowKey];
     if (!linie || !aktiv) return null;
 
     const kurvenPfad = `M ${linie.x1},${linie.y1} Q ${linie.cx},${linie.cy} ${linie.x2},${linie.y2}`;

@@ -1,10 +1,23 @@
 import React, { useEffect, useState } from 'react'
 import { LineChartCard } from '../components/Charts'
 
+type WallboxStatus = {
+  amp?: number
+  frc?: number
+  psm?: number
+  car?: number
+  modelStatus?: number | string
+}
+
+type ChartPoint = {
+  t: number | string
+  [key: string]: number | string | null | undefined
+}
+
 export default function Wallbox() {
-  const [status, setStatus] = useState(null)
-  const [hist, setHist] = useState([])
-  const [err, setErr] = useState(null)
+  const [status, setStatus] = useState<WallboxStatus | null>(null)
+  const [hist, setHist] = useState<ChartPoint[]>([])
+  const [err, setErr] = useState<string | null>(null)
 
   useEffect(() => {
     const base = window.location.origin.replace(':8080', ':8081')
@@ -13,14 +26,14 @@ export default function Wallbox() {
       try {
         const r = await fetch(base + '/api/wallbox/status', { cache: 'no-store' })
         if (!r.ok) throw new Error('HTTP ' + r.status)
-        const j = await r.json(); if (!abort) { setStatus(j); setErr(null) }
+        const j: WallboxStatus = await r.json(); if (!abort) { setStatus(j); setErr(null) }
       } catch(e){ if (!abort) setErr('Wallbox-API nicht erreichbar') }
     }
     const fetchHist = async () => {
       try {
         const r = await fetch(base + '/api/wallbox/history?interval=5m', { cache: 'no-store' })
         if (!r.ok) throw new Error('HTTP ' + r.status)
-        const j = await r.json(); if (!abort) { setHist(j.series || []); setErr(null) }
+        const j: { series?: ChartPoint[] } = await r.json(); if (!abort) { setHist(j.series || []); setErr(null) }
       } catch(e){ if (!abort) setErr('Wallbox-Historie nicht erreichbar') }
     }
     fetchStatus(); fetchHist()
@@ -41,7 +54,7 @@ export default function Wallbox() {
   )
 }
 
-function Card({ title, value, unit = '' }){
+function Card({ title, value, unit = '' }: { title: string; value: number | string | undefined; unit?: string }){
   return (
     <div style={{border:'1px solid #eee', borderRadius:8, padding:12}}>
       <div style={{color:'#666', fontSize:12}}>{title}</div>
@@ -50,7 +63,7 @@ function Card({ title, value, unit = '' }){
   )
 }
 
-function Cards({ status }){
+function Cards({ status }: { status: WallboxStatus | null }){
   const grid = { display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(160px, 1fr))', gap:12, marginTop:12 }
   return (
     <div style={grid}>

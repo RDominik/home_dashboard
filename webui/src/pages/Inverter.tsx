@@ -1,10 +1,23 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { AreaChartCard } from '../components/Charts'
 
+type InverterSummary = {
+  ppv?: number
+  house_consumption?: number
+  battery_soc?: number
+}
+
+type ChartPoint = {
+  t: number | string
+  [key: string]: number | string | null | undefined
+}
+
+type CardItem = [string, number | null | undefined, string]
+
 export default function Inverter() {
-  const [summary, setSummary] = useState(null)
-  const [hist, setHist] = useState([])
-  const [err, setErr] = useState(null)
+  const [summary, setSummary] = useState<InverterSummary | null>(null)
+  const [hist, setHist] = useState<ChartPoint[]>([])
+  const [err, setErr] = useState<string | null>(null)
 
   useEffect(() => {
     const base = window.location.origin.replace(':8080', ':8081')
@@ -13,14 +26,14 @@ export default function Inverter() {
       try {
         const r = await fetch(base + '/api/inverter/summary', { cache: 'no-store' })
         if (!r.ok) throw new Error('HTTP ' + r.status)
-        const j = await r.json(); if (!abort) { setSummary(j); setErr(null) }
+        const j: InverterSummary = await r.json(); if (!abort) { setSummary(j); setErr(null) }
       } catch(e){ if (!abort) setErr('Inverter-API nicht erreichbar') }
     }
     const fetchHist = async () => {
       try {
         const r = await fetch(base + '/api/inverter/history?interval=5m', { cache: 'no-store' })
         if (!r.ok) throw new Error('HTTP ' + r.status)
-        const j = await r.json(); if (!abort) { setHist(j.series || []); setErr(null) }
+        const j: { series?: ChartPoint[] } = await r.json(); if (!abort) { setHist(j.series || []); setErr(null) }
       } catch(e){ if (!abort) setErr('Inverter-Historie nicht erreichbar') }
     }
     fetchSummary(); fetchHist()
@@ -29,7 +42,7 @@ export default function Inverter() {
     return () => { abort = true; clearInterval(t1); clearInterval(t2) }
   }, [])
 
-  const cards = useMemo(() => ([
+  const cards: CardItem[] = useMemo(() => ([
     ['PV', summary?.ppv, 'W'],
     ['Haus', summary?.house_consumption, 'W'],
     ['Batterie‑SoC', summary?.battery_soc, '%'],
@@ -53,7 +66,7 @@ export default function Inverter() {
   )
 }
 
-function Card({ title, value, unit }){
+function Card({ title, value, unit }: { title: string; value: number | null | undefined; unit: string }){
   return (
     <div style={{border:'1px solid #eee', borderRadius:8, padding:12}}>
       <div style={{color:'#666', fontSize:12}}>{title}</div>
@@ -62,7 +75,7 @@ function Card({ title, value, unit }){
   )
 }
 
-function Cards({ items }){
+function Cards({ items }: { items: CardItem[] }){
   const grid = { display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(160px, 1fr))', gap:12, marginTop:12 }
   return (
     <div style={grid}>
@@ -71,8 +84,8 @@ function Cards({ items }){
   )
 }
 
-function fmt(v, unit){
-  if (v == null) return null
+function fmt(v: number, unit: string): string {
+  if (v == null) return '—'
   if (unit === '%') return new Intl.NumberFormat('de-DE', { maximumFractionDigits:1 }).format(v) + ' %'
   return new Intl.NumberFormat('de-DE').format(Math.round(v)) + ' ' + (unit || '')
 }

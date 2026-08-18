@@ -10,10 +10,9 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
-    "strict": false,
+    "strict": true,
     "skipLibCheck": true,
-    "allowJs": true,
-    "checkJs": false
+    "allowJs": false
   },
-  "include": ["src", "vite.config.ts", "vite.config.js"]
+  "include": ["src"]
 }
