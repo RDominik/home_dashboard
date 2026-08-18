@@ -402,14 +402,12 @@ func (h *ChickenDoor) autoStopTick() {
 	timeoutSeconds := clampMotorAutoStopSeconds(h.motorAutoStopSeconds)
 	h.motorAutoStopSeconds = timeoutSeconds
 
-	if !running {
-		h.motorRunningSince = time.Time{}
-		h.mu.Unlock()
-		return
-	}
-
 	now := time.Now()
 	if h.motorRunningSince.IsZero() {
+		if !running {
+			h.mu.Unlock()
+			return
+		}
 		h.motorRunningSince = now
 		h.mu.Unlock()
 		return
@@ -1037,6 +1035,11 @@ func (h *ChickenDoor) SetHandler(w http.ResponseWriter, r *http.Request) {
 		payload = toInt(req.Value) * 1000
 	}
 
+	if err := h.mqttManager.Publish(topic, payload); err != nil {
+		jsonResponse(w, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+
 	if req.Key == "engine" {
 		command := strings.ToLower(strings.TrimSpace(toString(req.Value)))
 		h.mu.Lock()
@@ -1046,11 +1049,6 @@ func (h *ChickenDoor) SetHandler(w http.ResponseWriter, r *http.Request) {
 			h.motorRunningSince = time.Time{}
 		}
 		h.mu.Unlock()
-	}
-
-	if err := h.mqttManager.Publish(topic, payload); err != nil {
-		jsonResponse(w, map[string]any{"ok": false, "error": err.Error()})
-		return
 	}
 
 	if req.Key == "engine/sleep" {
