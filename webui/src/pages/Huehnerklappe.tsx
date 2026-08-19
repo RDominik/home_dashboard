@@ -611,6 +611,23 @@ export default function Huehnerklappe() {
             Wechsel auf "Manuell" deaktiviert sofort. Aktivierung erfolgt erst mit "Timestamp-Schedule senden".
           </p>
 
+        <div style={{ marginTop: 14, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <label style={{ fontSize: 14, color: '#6b7280' }}>
+            Motor Auto-Stop (Sekunden, 1-60):
+            <input
+              type="number"
+              min={1}
+              max={60}
+              value={motorAutoStopSeconds}
+              onChange={e => setMotorAutoStopSeconds(Math.max(1, Math.min(60, Number(e.target.value) || 1)))}
+              style={{ marginLeft: 8, padding: '6px 8px', borderRadius: 6, border: '1px solid #e5e7eb', width: 80 }}
+            />
+          </label>
+          <span style={{ fontSize: 12, color: '#6b7280' }}>
+            Wenn der Motor laeuft, sendet das Backend nach Ablauf automatisch "stop".
+          </span>
+        </div>
+
         <div style={sectionStateStyle(controlMode === 'manual')}>
           <h4 style={{ marginTop: 0, marginBottom: 10, color: '#374151' }}>Manuelle Steuerung</h4>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -643,22 +660,6 @@ export default function Huehnerklappe() {
           >
             Controller schlafen lassen
           </button>
-        </div>
-        <div style={{ marginTop: 14, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-          <label style={{ fontSize: 14, color: '#6b7280' }}>
-            Motor Auto-Stop (Sekunden, 1-30):
-            <input
-              type="number"
-              min={1}
-              max={30}
-              value={motorAutoStopSeconds}
-              onChange={e => setMotorAutoStopSeconds(Math.max(1, Math.min(30, Number(e.target.value) || 1)))}
-              style={{ marginLeft: 8, padding: '6px 8px', borderRadius: 6, border: '1px solid #e5e7eb', width: 80 }}
-            />
-          </label>
-          <span style={{ fontSize: 12, color: '#6b7280' }}>
-            Wenn der Motor laeuft, sendet das Backend nach Ablauf automatisch "stop".
-          </span>
         </div>
         <div style={{ marginTop: 14, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <label style={{ fontSize: 14, color: '#6b7280' }}>

@@ -25,7 +25,6 @@ const stateDBPathDefault = "data/chickendoor.db"
 const stateBucketName = "chickendoor"
 const stateKey = "state"
 
-const scheduleWakeDelay = 10 * time.Second
 const scheduleRetryDelay = 5 * time.Second
 const scheduleHistorySize = 20
 const defaultScheduleTimezone = "Europe/Berlin"
@@ -156,6 +155,7 @@ type ChickenDoor struct {
 	scheduleActive        bool
 	scheduleWakeAt        time.Time
 	pendingScheduleAction string
+	scheduleSleepPending  bool
 	scheduleHistory       []ScheduleHistoryEntry
 	sleepTime             int
 	motorAutoStopSeconds  int
@@ -614,6 +614,7 @@ func (h *ChickenDoor) scheduleSleepUntilNext(reason string) bool {
 
 	h.mu.Lock()
 	h.pendingScheduleAction = normalizeScheduleAction(nextEntry.Action)
+	h.scheduleSleepPending = false
 	nowTs := time.Now()
 	h.lastSleepCommandAt = nowTs
 	h.scheduleHistory = append(h.scheduleHistory, ScheduleHistoryEntry{
@@ -715,7 +716,9 @@ func (h *ChickenDoor) updateStateTracking(controllerState, sleepState string, st
 			}
 		}
 		if h.scheduleActive {
-			h.scheduleWakeAt = time.Now().Add(scheduleWakeDelay)
+			// The action is sent immediately after wake-up. The following scheduler
+			// phase keeps the controller awake before sending the next sleep command.
+			h.scheduleWakeAt = time.Now()
 		}
 	}
 	h.lastControllerState = stateForTransition
@@ -729,7 +732,7 @@ func (h *ChickenDoor) updateStateTracking(controllerState, sleepState string, st
 // @brief Executes one periodic scheduler tick.
 //
 // Reads MQTT states, updates transition tracking, and triggers the next sleep
-// cycle after scheduleWakeAt has elapsed.
+// cycle after the configured awake interval has elapsed.
 //
 // Scheduling is blocked only while the controller is explicitly sleeping or
 // offline. Unknown or non-standard awake states are treated as schedulable so
@@ -773,9 +776,19 @@ func (h *ChickenDoor) scheduleTick() {
 	if shouldSchedule {
 		h.mu.Lock()
 		action := h.pendingScheduleAction
-		h.pendingScheduleAction = ""
+		waitingToSleep := h.scheduleSleepPending
+		if !waitingToSleep {
+			h.pendingScheduleAction = ""
+			h.scheduleSleepPending = true
+			h.scheduleWakeAt = time.Now().Add(time.Duration(h.scheduleAwakeSeconds) * time.Second)
+		} else {
+			h.scheduleSleepPending = false
+		}
 		h.mu.Unlock()
-		h.executeScheduleAction(action)
+		if !waitingToSleep {
+			h.executeScheduleAction(action)
+			return
+		}
 		if ok := h.scheduleSleepUntilNext("post-online-delay"); !ok {
 			h.mu.Lock()
 			if h.scheduleActive {
@@ -1245,8 +1258,9 @@ func (h *ChickenDoor) SleepScheduleHandler(w http.ResponseWriter, r *http.Reques
 		h.controlMode = "manual"
 	}
 	if req.Active {
-		// Trigger processing in runLoop; next timestamp is calculated there.
-		h.scheduleWakeAt = time.Now()
+		// Arm the first sleep cycle immediately. Later cycles are armed after
+		// the controller reports the transition from sleeping to online.
+		h.scheduleWakeAt = time.Time{}
 	} else {
 		h.scheduleWakeAt = time.Time{}
 	}
@@ -1254,6 +1268,9 @@ func (h *ChickenDoor) SleepScheduleHandler(w http.ResponseWriter, r *http.Reques
 
 	h.publishScheduleActive(req.Active, "sleep-schedule-handler")
 	h.persistState()
+	if req.Active {
+		h.scheduleSleepUntilNext("schedule-activation")
+	}
 
 	jsonResponse(w, map[string]any{
 		"ok":           true,
