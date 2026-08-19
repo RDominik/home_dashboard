@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 const API = '/api/huehnerklappe'
 
 type ControlMode = 'manual' | 'schedule'
+type ScheduleAction = 'open' | 'close' | 'stop' | 'none'
 
 type Feedback = {
   type: 'success' | 'error'
@@ -45,6 +46,7 @@ type UiStateResponse = {
   controlMode?: ControlMode
   scheduleActive?: boolean
   scheduleTimestamps?: string[]
+  scheduleEntries?: Array<{ timestamp?: string; action?: ScheduleAction }>
   awakeSeconds?: number
   historyExpanded?: boolean
 }
@@ -68,6 +70,7 @@ export default function Huehnerklappe() {
   const [controlMode, setControlMode] = useState<ControlMode>('manual')
   const [scheduleActive, setScheduleActive] = useState(false)
   const [scheduleTimestamps, setScheduleTimestamps] = useState(['06:30:00', '12:00:00', '18:30:00'])
+  const [scheduleActions, setScheduleActions] = useState<ScheduleAction[]>(['none', 'none', 'none'])
   const [awakeSeconds, setAwakeSeconds] = useState(30)
   const [pickerIndex, setPickerIndex] = useState<number | null>(null)
   const [pickerDraft, setPickerDraft] = useState<PickerDraft>({ hour: '00', minute: '00', second: '00' })
@@ -133,6 +136,22 @@ export default function Huehnerklappe() {
           .slice(0, 20)
         if (cleaned.length > 0) {
           setScheduleTimestamps(cleaned)
+          setScheduleActions(cleaned.map(() => 'none'))
+        }
+      }
+      if (Array.isArray(data.scheduleEntries) && data.scheduleEntries.length > 0) {
+        const entries = data.scheduleEntries
+          .map((entry) => ({
+            timestamp: String(entry.timestamp ?? '').trim(),
+            action: entry.action === 'open' || entry.action === 'close' || entry.action === 'stop' || entry.action === 'none'
+              ? entry.action
+              : 'none' as ScheduleAction,
+          }))
+          .filter((entry) => entry.timestamp)
+          .slice(0, 20)
+        if (entries.length > 0) {
+          setScheduleTimestamps(entries.map((entry) => entry.timestamp))
+          setScheduleActions(entries.map((entry) => entry.action))
         }
       }
       if (Number.isFinite(data.awakeSeconds)) {
@@ -176,6 +195,10 @@ export default function Huehnerklappe() {
       controlMode,
       scheduleActive,
       scheduleTimestamps,
+      scheduleEntries: scheduleTimestamps.map((timestamp, index) => ({
+        timestamp,
+        action: scheduleActions[index] ?? 'none',
+      })),
       awakeSeconds,
       historyExpanded,
     }
@@ -189,7 +212,7 @@ export default function Huehnerklappe() {
     }, 250)
 
     return () => clearTimeout(timer)
-  }, [uiLoaded, sleepTime, motorAutoStopSeconds, sleepUntil, controlMode, scheduleActive, scheduleTimestamps, awakeSeconds, historyExpanded])
+  }, [uiLoaded, sleepTime, motorAutoStopSeconds, sleepUntil, controlMode, scheduleActive, scheduleTimestamps, scheduleActions, awakeSeconds, historyExpanded])
 
   const sendCommand = async (key: string, value: string | number | null = null, successMessage: string | null = null) => {
     setSending(true)
@@ -263,6 +286,7 @@ export default function Huehnerklappe() {
       }
       return [...prev, '00:00:00']
     })
+    setScheduleActions(prev => [...prev, 'none'])
   }
 
   const removeScheduleTimestamp = (index: number) => {
@@ -271,6 +295,15 @@ export default function Huehnerklappe() {
         return prev
       }
       return prev.filter((_, i) => i !== index)
+    })
+    setScheduleActions(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const updateScheduleAction = (index: number, action: ScheduleAction) => {
+    setScheduleActions(prev => {
+      const next = [...prev]
+      next[index] = action
+      return next
     })
   }
 
@@ -322,6 +355,7 @@ export default function Huehnerklappe() {
         body: JSON.stringify({
           count: timestamps.length,
           timestamps,
+          actions: timestamps.map((_, index) => scheduleActions[index] ?? 'none'),
           awakeSeconds,
           active,
         }),
@@ -612,13 +646,13 @@ export default function Huehnerklappe() {
         </div>
         <div style={{ marginTop: 14, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <label style={{ fontSize: 14, color: '#6b7280' }}>
-            Motor Auto-Stop (Sekunden, 1-60):
+            Motor Auto-Stop (Sekunden, 1-30):
             <input
               type="number"
               min={1}
-              max={60}
+              max={30}
               value={motorAutoStopSeconds}
-              onChange={e => setMotorAutoStopSeconds(Math.max(1, Math.min(60, Number(e.target.value) || 1)))}
+              onChange={e => setMotorAutoStopSeconds(Math.max(1, Math.min(30, Number(e.target.value) || 1)))}
               style={{ marginLeft: 8, padding: '6px 8px', borderRadius: 6, border: '1px solid #e5e7eb', width: 80 }}
             />
           </label>
@@ -714,6 +748,17 @@ export default function Huehnerklappe() {
                     >
                       {timestamp}
                     </button>
+                    <select
+                      value={scheduleActions[index] ?? 'none'}
+                      onChange={(e) => updateScheduleAction(index, e.target.value as ScheduleAction)}
+                      aria-label={`Aktion für Timestamp ${index + 1}`}
+                      style={{ padding: '8px 10px', borderRadius: 10, border: `1px solid ${selectedTheme.inputBorder}`, background: selectedTheme.inputBg, color: selectedTheme.labelColor, minWidth: 145 }}
+                    >
+                      <option value="open">Öffnen</option>
+                      <option value="close">Schließen</option>
+                      <option value="stop">Stop</option>
+                      <option value="none">Keine Aktion</option>
+                    </select>
                   </label>
 
                   {pickerIndex === index && (

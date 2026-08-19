@@ -51,8 +51,14 @@ type setRequest struct {
 type sleepScheduleRequest struct {
 	Count        int      `json:"count"`
 	Timestamps   []string `json:"timestamps"`
+	Actions      []string `json:"actions"`
 	AwakeSeconds int      `json:"awakeSeconds"`
 	Active       bool     `json:"active"`
+}
+
+type ScheduleEntry struct {
+	Timestamp string `json:"timestamp"`
+	Action    string `json:"action"`
 }
 
 type StatusResponse struct {
@@ -144,17 +150,19 @@ type ChickenDoor struct {
 	onlineAt            time.Time
 	wakeDeltaMs         int64
 
-	scheduleAwakeSeconds int
-	scheduleTimestamps   []string
-	scheduleActive       bool
-	scheduleWakeAt       time.Time
-	scheduleHistory      []ScheduleHistoryEntry
-	sleepTime            int
-	motorAutoStopSeconds int
-	sleepUntil           string
-	controlMode          string
-	historyExpanded      bool
-	motorRunningSince    time.Time
+	scheduleAwakeSeconds  int
+	scheduleTimestamps    []string
+	scheduleEntries       []ScheduleEntry
+	scheduleActive        bool
+	scheduleWakeAt        time.Time
+	pendingScheduleAction string
+	scheduleHistory       []ScheduleHistoryEntry
+	sleepTime             int
+	motorAutoStopSeconds  int
+	sleepUntil            string
+	controlMode           string
+	historyExpanded       bool
+	motorRunningSince     time.Time
 
 	lastStatusPosition   string
 	lastStatusAction     string
@@ -173,6 +181,7 @@ type ChickenDoor struct {
 type persistedState struct {
 	ScheduleAwakeSeconds int                    `json:"scheduleAwakeSeconds"`
 	ScheduleTimestamps   []string               `json:"scheduleTimestamps"`
+	ScheduleEntries      []ScheduleEntry        `json:"scheduleEntries,omitempty"`
 	ScheduleActive       bool                   `json:"scheduleActive"`
 	ScheduleHistory      []ScheduleHistoryEntry `json:"scheduleHistory"`
 	SleepTime            int                    `json:"sleepTime"`
@@ -191,13 +200,14 @@ type persistedState struct {
 }
 
 type uiStateRequest struct {
-	SleepTime            int      `json:"sleepTime"`
-	MotorAutoStopSeconds int      `json:"motorAutoStopSeconds"`
-	SleepUntil           string   `json:"sleepUntil"`
-	ControlMode          string   `json:"controlMode"`
-	HistoryExpanded      bool     `json:"historyExpanded"`
-	ScheduleTimestamps   []string `json:"scheduleTimestamps"`
-	AwakeSeconds         int      `json:"awakeSeconds"`
+	SleepTime            int             `json:"sleepTime"`
+	MotorAutoStopSeconds int             `json:"motorAutoStopSeconds"`
+	SleepUntil           string          `json:"sleepUntil"`
+	ControlMode          string          `json:"controlMode"`
+	HistoryExpanded      bool            `json:"historyExpanded"`
+	ScheduleTimestamps   []string        `json:"scheduleTimestamps"`
+	ScheduleEntries      []ScheduleEntry `json:"scheduleEntries"`
+	AwakeSeconds         int             `json:"awakeSeconds"`
 }
 
 // @brief Clamps motor auto-stop setting to the allowed range.
@@ -281,6 +291,12 @@ func (h *ChickenDoor) loadPersistedState() {
 	h.mu.Lock()
 	h.scheduleAwakeSeconds = state.ScheduleAwakeSeconds
 	h.scheduleTimestamps = append([]string(nil), state.ScheduleTimestamps...)
+	h.scheduleEntries = append([]ScheduleEntry(nil), state.ScheduleEntries...)
+	if len(h.scheduleEntries) == 0 {
+		for _, timestamp := range h.scheduleTimestamps {
+			h.scheduleEntries = append(h.scheduleEntries, ScheduleEntry{Timestamp: timestamp, Action: "none"})
+		}
+	}
 	h.scheduleActive = state.ScheduleActive
 	h.scheduleHistory = append([]ScheduleHistoryEntry(nil), state.ScheduleHistory...)
 	h.sleepTime = state.SleepTime
@@ -323,6 +339,7 @@ func (h *ChickenDoor) persistState() {
 	state := persistedState{
 		ScheduleAwakeSeconds: h.scheduleAwakeSeconds,
 		ScheduleTimestamps:   append([]string(nil), h.scheduleTimestamps...),
+		ScheduleEntries:      append([]ScheduleEntry(nil), h.scheduleEntries...),
 		ScheduleActive:       h.scheduleActive,
 		ScheduleHistory:      append([]ScheduleHistoryEntry(nil), h.scheduleHistory...),
 		SleepTime:            h.sleepTime,
@@ -475,27 +492,50 @@ func parseScheduleTimestampForDay(base time.Time, value string) (time.Time, erro
 // @param timestamps List of time strings in HH:MM or HH:MM:SS format.
 // @return Next execution timestamp, or an error for invalid input.
 func nextScheduleTimestamp(now time.Time, timestamps []string) (time.Time, error) {
-	if len(timestamps) == 0 {
-		return time.Time{}, fmt.Errorf("keine timestamps konfiguriert")
+	entries := make([]ScheduleEntry, 0, len(timestamps))
+	for _, timestamp := range timestamps {
+		entries = append(entries, ScheduleEntry{Timestamp: timestamp, Action: "none"})
+	}
+	entry, err := nextScheduleEntry(now, entries)
+	if err != nil {
+		return time.Time{}, err
+	}
+	result, err := parseScheduleTimestampForDay(now, entry.Timestamp)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if !result.After(now) {
+		result = result.Add(24 * time.Hour)
+	}
+	return result, nil
+}
+
+func nextScheduleEntry(now time.Time, entries []ScheduleEntry) (ScheduleEntry, error) {
+	if len(entries) == 0 {
+		return ScheduleEntry{}, fmt.Errorf("keine timestamps konfiguriert")
 	}
 
-	candidates := make([]time.Time, 0, len(timestamps))
-	for _, ts := range timestamps {
-		candidate, err := parseScheduleTimestampForDay(now, ts)
+	type candidateEntry struct {
+		entry ScheduleEntry
+		time  time.Time
+	}
+	candidates := make([]candidateEntry, 0, len(entries))
+	for _, entry := range entries {
+		candidate, err := parseScheduleTimestampForDay(now, entry.Timestamp)
 		if err != nil {
-			return time.Time{}, fmt.Errorf("ungültiger timestamp '%s': %w", ts, err)
+			return ScheduleEntry{}, fmt.Errorf("ungültiger timestamp '%s': %w", entry.Timestamp, err)
 		}
 		if !candidate.After(now) {
 			candidate = candidate.Add(24 * time.Hour)
 		}
-		candidates = append(candidates, candidate)
+		candidates = append(candidates, candidateEntry{entry: entry, time: candidate})
 	}
 
 	sort.Slice(candidates, func(i, j int) bool {
-		return candidates[i].Before(candidates[j])
+		return candidates[i].time.Before(candidates[j].time)
 	})
 
-	return candidates[0], nil
+	return candidates[0].entry, nil
 }
 
 // @brief Calculates and sends a sleep command until the next schedule timestamp.
@@ -508,19 +548,32 @@ func nextScheduleTimestamp(now time.Time, timestamps []string) (time.Time, error
 func (h *ChickenDoor) scheduleSleepUntilNext(reason string) bool {
 	h.mu.Lock()
 	active := h.scheduleActive
-	timestamps := append([]string(nil), h.scheduleTimestamps...)
+	entries := append([]ScheduleEntry(nil), h.scheduleEntries...)
+	if len(entries) == 0 {
+		for _, timestamp := range h.scheduleTimestamps {
+			entries = append(entries, ScheduleEntry{Timestamp: timestamp, Action: "none"})
+		}
+	}
 	lastKnownBattery := h.lastStatusBattery
 	h.mu.Unlock()
 
-	if !active || len(timestamps) == 0 {
+	if !active || len(entries) == 0 {
 		return false
 	}
 
 	now := scheduleNow()
-	nextTs, err := nextScheduleTimestamp(now, timestamps)
+	nextEntry, err := nextScheduleEntry(now, entries)
 	if err != nil {
 		log.Printf("[chickendoor-schedule] next timestamp error (%s): %v", reason, err)
 		return false
+	}
+	nextTs, err := parseScheduleTimestampForDay(now, nextEntry.Timestamp)
+	if err != nil {
+		log.Printf("[chickendoor-schedule] next timestamp error (%s): %v", reason, err)
+		return false
+	}
+	if !nextTs.After(now) {
+		nextTs = nextTs.Add(24 * time.Hour)
 	}
 
 	duration := nextTs.Sub(now)
@@ -560,6 +613,7 @@ func (h *ChickenDoor) scheduleSleepUntilNext(reason string) bool {
 	}
 
 	h.mu.Lock()
+	h.pendingScheduleAction = normalizeScheduleAction(nextEntry.Action)
 	nowTs := time.Now()
 	h.lastSleepCommandAt = nowTs
 	h.scheduleHistory = append(h.scheduleHistory, ScheduleHistoryEntry{
@@ -575,6 +629,42 @@ func (h *ChickenDoor) scheduleSleepUntilNext(reason string) bool {
 
 	log.Printf("[chickendoor-schedule] sleep sent (%s): %ds until %s", reason, sleepSeconds, nextTs.Format("15:04:05"))
 	return true
+}
+
+func normalizeScheduleAction(action string) string {
+	switch strings.ToLower(strings.TrimSpace(action)) {
+	case "open", "öffnen", "oeffnen":
+		return "open"
+	case "close", "schließen", "schliessen":
+		return "close"
+	case "stop":
+		return "stop"
+	default:
+		return "none"
+	}
+}
+
+func (h *ChickenDoor) executeScheduleAction(action string) {
+	action = normalizeScheduleAction(action)
+	if action == "none" {
+		return
+	}
+
+	if err := h.mqttManager.Publish(fmt.Sprintf("%s/engine", nanoSetPrefix), action); err != nil {
+		log.Printf("[chickendoor-schedule] action %s failed: %v", action, err)
+		return
+	}
+
+	h.mu.Lock()
+	if action == "open" || action == "close" {
+		h.motorRunningSince = time.Now()
+	} else {
+		h.motorRunningSince = time.Time{}
+	}
+	h.lastStatusAction = action
+	h.mu.Unlock()
+	h.persistState()
+	log.Printf("[chickendoor-schedule] action sent: %s", action)
 }
 
 // @brief Updates transition state and timestamps for sleeping/online changes.
@@ -681,6 +771,11 @@ func (h *ChickenDoor) scheduleTick() {
 	h.mu.Unlock()
 
 	if shouldSchedule {
+		h.mu.Lock()
+		action := h.pendingScheduleAction
+		h.pendingScheduleAction = ""
+		h.mu.Unlock()
+		h.executeScheduleAction(action)
 		if ok := h.scheduleSleepUntilNext("post-online-delay"); !ok {
 			h.mu.Lock()
 			if h.scheduleActive {
@@ -949,6 +1044,7 @@ func (h *ChickenDoor) UIStateHandler(w http.ResponseWriter, r *http.Request) {
 			"controlMode":          h.controlMode,
 			"historyExpanded":      h.historyExpanded,
 			"scheduleTimestamps":   append([]string(nil), h.scheduleTimestamps...),
+			"scheduleEntries":      append([]ScheduleEntry(nil), h.scheduleEntries...),
 			"awakeSeconds":         h.scheduleAwakeSeconds,
 			"scheduleActive":       h.scheduleActive,
 		}
@@ -986,6 +1082,18 @@ func (h *ChickenDoor) UIStateHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			if len(cleaned) > 0 {
 				h.scheduleTimestamps = append([]string(nil), cleaned...)
+				entries := make([]ScheduleEntry, 0, len(cleaned))
+				for _, timestamp := range cleaned {
+					entries = append(entries, ScheduleEntry{Timestamp: timestamp, Action: "none"})
+				}
+				h.scheduleEntries = entries
+			}
+		}
+		if len(req.ScheduleEntries) > 0 {
+			h.scheduleEntries = append([]ScheduleEntry(nil), req.ScheduleEntries...)
+			h.scheduleTimestamps = make([]string, 0, len(req.ScheduleEntries))
+			for _, entry := range req.ScheduleEntries {
+				h.scheduleTimestamps = append(h.scheduleTimestamps, entry.Timestamp)
 			}
 		}
 		h.mu.Unlock()
@@ -1105,7 +1213,8 @@ func (h *ChickenDoor) SleepScheduleHandler(w http.ResponseWriter, r *http.Reques
 	}
 
 	cleanedTimestamps := make([]string, 0, len(req.Timestamps))
-	for _, ts := range req.Timestamps {
+	cleanedEntries := make([]ScheduleEntry, 0, len(req.Timestamps))
+	for index, ts := range req.Timestamps {
 		trimmed := strings.TrimSpace(ts)
 		if trimmed == "" {
 			jsonError(w, http.StatusBadRequest, "Leere Timestamps sind nicht erlaubt")
@@ -1116,11 +1225,17 @@ func (h *ChickenDoor) SleepScheduleHandler(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		cleanedTimestamps = append(cleanedTimestamps, trimmed)
+		action := "none"
+		if index < len(req.Actions) {
+			action = normalizeScheduleAction(req.Actions[index])
+		}
+		cleanedEntries = append(cleanedEntries, ScheduleEntry{Timestamp: trimmed, Action: action})
 	}
 
 	h.mu.Lock()
 	h.scheduleAwakeSeconds = req.AwakeSeconds
 	h.scheduleTimestamps = append([]string(nil), cleanedTimestamps...)
+	h.scheduleEntries = append([]ScheduleEntry(nil), cleanedEntries...)
 	h.scheduleActive = req.Active
 	if req.Active {
 		// The active mode is persisted separately so all browsers load the same
@@ -1145,6 +1260,7 @@ func (h *ChickenDoor) SleepScheduleHandler(w http.ResponseWriter, r *http.Reques
 		"stored":       true,
 		"count":        req.Count,
 		"timestamps":   cleanedTimestamps,
+		"entries":      cleanedEntries,
 		"awakeSeconds": req.AwakeSeconds,
 		"active":       req.Active,
 	})
