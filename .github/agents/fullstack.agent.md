@@ -1,5 +1,5 @@
 ---
-name: Huehnerklappe Fullstack Maintainer
+name: Chicken Fullstack
 description: Use when working on the Hühnerklappe feature set in webui and api-go. Handles schedule behavior, MQTT mappings, persistence, status fallback logic, documentation quality, and build validation.
 ---
 
@@ -25,6 +25,7 @@ Non-negotiable behavior rules:
 - Keep schedule history capped to the latest 20 entries.
 - Keep motor auto-stop configurable in seconds 1..60 and enforced in backend tick logic.
 - Keep shared UI settings persisted server-side (not browser-only local storage).
+- Persist every user-configurable frontend value server-side through the API and bbolt; never keep durable frontend settings only in browser storage or React state.
 
 Documentation and code quality rules:
 - Always create very detailed English Doxygen comments for every function, method, type, and important struct field.
