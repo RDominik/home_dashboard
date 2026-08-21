@@ -504,12 +504,6 @@ export default function Huehnerklappe() {
     transition: 'left 0.2s ease',
   }
 
-  const sectionStateStyle = (isActive: boolean): CSSProperties => ({
-    opacity: isActive ? 1 : 0.45,
-    filter: isActive ? 'none' : 'grayscale(0.3)',
-    pointerEvents: isActive ? 'auto' : 'none',
-  })
-
   const formatStatusTimestamp = (unixMs: number | undefined) => {
     if (typeof unixMs === 'number' && Number.isFinite(unixMs) && unixMs > 0) {
       const correctedMs = unixMs + clockOffsetMs
@@ -628,7 +622,8 @@ export default function Huehnerklappe() {
           </span>
         </div>
 
-        <div style={sectionStateStyle(controlMode === 'manual')}>
+        {controlMode === 'manual' && (
+        <div>
           <h4 style={{ marginTop: 0, marginBottom: 10, color: '#374151' }}>Manuelle Steuerung</h4>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <button style={btnStyle('#10b981')} disabled={sending} onClick={() => sendCommand('engine','open')}>
@@ -681,8 +676,10 @@ export default function Huehnerklappe() {
           </button>
         </div>
         </div>
+        )}
 
-        <div style={{ ...selectedTheme.card, ...sectionStateStyle(controlMode === 'schedule') }}>
+        {controlMode === 'schedule' && (
+        <div style={selectedTheme.card}>
           <h4 style={{ marginTop: 0, marginBottom: 8, color: selectedTheme.titleColor, fontSize: 18 }}>Sleep-Schedule per Timestamps</h4>
           <p style={{ marginTop: 0, marginBottom: 14, color: selectedTheme.subtitleColor, fontSize: 13 }}>
             Zeiten werden in Reihenfolge gespeichert und nacheinander abgearbeitet.
@@ -925,6 +922,7 @@ export default function Huehnerklappe() {
             </div>
           )}
         </div>
+        )}
       </div>
     </div>
   )
