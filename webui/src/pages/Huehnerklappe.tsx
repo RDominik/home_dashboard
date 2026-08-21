@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 const API = '/api/huehnerklappe'
 
@@ -384,22 +384,16 @@ export default function Huehnerklappe() {
     }
   }
 
-  const controlCardRef = useRef<HTMLDivElement>(null)
-
-  const scrollToControlCard = () => {
-    controlCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
-
   const activateManualMode = async () => {
+    window.scrollTo({ top: 0, behavior: 'instant' })
     setControlMode('manual')
     setScheduleActive(false)
-    scrollToControlCard()
     await sendSleepSchedule(scheduleTimestamps, false, false)
   }
 
   const activateScheduleMode = () => {
+    window.scrollTo({ top: 0, behavior: 'instant' })
     setControlMode('schedule')
-    scrollToControlCard()
   }
 
   const setScheduleEnabled = async (nextActive: boolean) => {
@@ -599,7 +593,7 @@ export default function Huehnerklappe() {
       </div>
 
       {/* Steuerung */}
-      <div ref={controlCardRef} style={{ ...cardStyle }}>
+      <div style={{ ...cardStyle }}>
         <h3 style={{ marginTop: 0, color: '#374151' }}>🔧 Klappe steuern</h3>
         <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
           <button type="button" style={modeSwitchButton('manual')} onClick={activateManualMode} disabled={sending}>
