@@ -384,44 +384,23 @@ export default function Huehnerklappe() {
     }
   }
 
-  const clampScrollAfterLayoutChange = () => {
-    // The page uses an internal scroll container (<main overflow:auto>), not window.
-    // Clamp that container after large content blocks are added/removed.
+  const scrollMainToTop = () => {
     const scrollContainer = document.querySelector('main') as HTMLElement | null
-    if (!scrollContainer) {
-      return
-    }
-    const maxScrollTop = Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight)
-    if (scrollContainer.scrollTop > maxScrollTop) {
-      scrollContainer.scrollTop = maxScrollTop
-    }
+    if (!scrollContainer) return
+    scrollContainer.scrollTop = 0
   }
 
   const activateManualMode = async () => {
     setControlMode('manual')
     setScheduleActive(false)
+    requestAnimationFrame(scrollMainToTop)
     await sendSleepSchedule(scheduleTimestamps, false, false)
   }
 
   const activateScheduleMode = () => {
     setControlMode('schedule')
+    requestAnimationFrame(scrollMainToTop)
   }
-
-  useEffect(() => {
-    // Ensure the viewport is still within valid scroll bounds after mode
-    // changes that add/remove large UI blocks (e.g. schedule history table).
-    let frameA = 0
-    let frameB = 0
-    frameA = requestAnimationFrame(() => {
-      frameB = requestAnimationFrame(() => {
-        clampScrollAfterLayoutChange()
-      })
-    })
-    return () => {
-      if (frameA) cancelAnimationFrame(frameA)
-      if (frameB) cancelAnimationFrame(frameB)
-    }
-  }, [controlMode, historyExpanded])
 
   const setScheduleEnabled = async (nextActive: boolean) => {
     setScheduleActive(nextActive)
