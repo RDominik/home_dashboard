@@ -384,17 +384,39 @@ export default function Huehnerklappe() {
     }
   }
 
+  const clampScrollAfterLayoutChange = () => {
+    const doc = document.documentElement
+    const maxScrollTop = Math.max(0, doc.scrollHeight - window.innerHeight)
+    if (window.scrollY > maxScrollTop) {
+      window.scrollTo({ top: maxScrollTop, behavior: 'auto' })
+    }
+  }
+
   const activateManualMode = async () => {
-    window.scrollTo({ top: 0, behavior: 'instant' })
     setControlMode('manual')
     setScheduleActive(false)
     await sendSleepSchedule(scheduleTimestamps, false, false)
   }
 
   const activateScheduleMode = () => {
-    window.scrollTo({ top: 0, behavior: 'instant' })
     setControlMode('schedule')
   }
+
+  useEffect(() => {
+    // Ensure the viewport is still within valid scroll bounds after mode
+    // changes that add/remove large UI blocks (e.g. schedule history table).
+    let frameA = 0
+    let frameB = 0
+    frameA = requestAnimationFrame(() => {
+      frameB = requestAnimationFrame(() => {
+        clampScrollAfterLayoutChange()
+      })
+    })
+    return () => {
+      if (frameA) cancelAnimationFrame(frameA)
+      if (frameB) cancelAnimationFrame(frameB)
+    }
+  }, [controlMode])
 
   const setScheduleEnabled = async (nextActive: boolean) => {
     setScheduleActive(nextActive)
