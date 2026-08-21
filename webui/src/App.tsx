@@ -46,7 +46,7 @@ export default function App() {
           <div>v0.1 (Preview)</div>
         </div>
       </aside>
-      <main style={{ flex: 1, padding: 20, overflow: 'auto' }}>
+      <main style={{ flex: 1, padding: 20, overflow: 'auto', overflowAnchor: 'none' }}>
         <Outlet />
       </main>
     </div>
