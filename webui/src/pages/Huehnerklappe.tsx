@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 const API = '/api/huehnerklappe'
 
@@ -384,14 +384,22 @@ export default function Huehnerklappe() {
     }
   }
 
+  const controlCardRef = useRef<HTMLDivElement>(null)
+
+  const scrollToControlCard = () => {
+    controlCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
   const activateManualMode = async () => {
     setControlMode('manual')
     setScheduleActive(false)
+    scrollToControlCard()
     await sendSleepSchedule(scheduleTimestamps, false, false)
   }
 
   const activateScheduleMode = () => {
     setControlMode('schedule')
+    scrollToControlCard()
   }
 
   const setScheduleEnabled = async (nextActive: boolean) => {
@@ -591,7 +599,7 @@ export default function Huehnerklappe() {
       </div>
 
       {/* Steuerung */}
-      <div style={{ ...cardStyle }}>
+      <div ref={controlCardRef} style={{ ...cardStyle }}>
         <h3 style={{ marginTop: 0, color: '#374151' }}>🔧 Klappe steuern</h3>
         <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
           <button type="button" style={modeSwitchButton('manual')} onClick={activateManualMode} disabled={sending}>
@@ -906,7 +914,7 @@ export default function Huehnerklappe() {
                   </tr>
                 </thead>
                 <tbody>
-                  {scheduleHistoryRows.map((entry, idx) => (
+                  {scheduleHistoryRows.filter(entry => entry !== null).map((entry, idx) => (
                     <tr key={idx}>
                       <td style={{ padding: '8px 12px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>{idx + 1}</td>
                       <td style={{ padding: '8px 12px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>{scheduleEntryState(entry)}</td>
