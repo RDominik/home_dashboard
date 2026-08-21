@@ -624,7 +624,7 @@ export default function Huehnerklappe() {
 
         {controlMode === 'manual' && (
         <div>
-          <h4 style={{ marginTop: 0, marginBottom: 10, color: '#374151' }}>Manuelle Steuerung</h4>
+          <h4 style={{ marginTop: 16, marginBottom: 10, color: '#374151' }}>Manuelle Steuerung</h4>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <button style={btnStyle('#10b981')} disabled={sending} onClick={() => sendCommand('engine','open')}>
             Öffnen
@@ -679,8 +679,8 @@ export default function Huehnerklappe() {
         )}
 
         {controlMode === 'schedule' && (
-        <div style={selectedTheme.card}>
-          <h4 style={{ marginTop: 0, marginBottom: 8, color: selectedTheme.titleColor, fontSize: 18 }}>Sleep-Schedule per Timestamps</h4>
+        <div>
+          <h4 style={{ marginTop: 16, marginBottom: 8, color: selectedTheme.titleColor, fontSize: 18 }}>Sleep-Schedule per Timestamps</h4>
           <p style={{ marginTop: 0, marginBottom: 14, color: selectedTheme.subtitleColor, fontSize: 13 }}>
             Zeiten werden in Reihenfolge gespeichert und nacheinander abgearbeitet.
           </p>
