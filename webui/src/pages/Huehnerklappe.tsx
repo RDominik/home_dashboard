@@ -385,10 +385,15 @@ export default function Huehnerklappe() {
   }
 
   const clampScrollAfterLayoutChange = () => {
-    const doc = document.documentElement
-    const maxScrollTop = Math.max(0, doc.scrollHeight - window.innerHeight)
-    if (window.scrollY > maxScrollTop) {
-      window.scrollTo({ top: maxScrollTop, behavior: 'auto' })
+    // The page uses an internal scroll container (<main overflow:auto>), not window.
+    // Clamp that container after large content blocks are added/removed.
+    const scrollContainer = document.querySelector('main') as HTMLElement | null
+    if (!scrollContainer) {
+      return
+    }
+    const maxScrollTop = Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight)
+    if (scrollContainer.scrollTop > maxScrollTop) {
+      scrollContainer.scrollTop = maxScrollTop
     }
   }
 
@@ -416,7 +421,7 @@ export default function Huehnerklappe() {
       if (frameA) cancelAnimationFrame(frameA)
       if (frameB) cancelAnimationFrame(frameB)
     }
-  }, [controlMode])
+  }, [controlMode, historyExpanded])
 
   const setScheduleEnabled = async (nextActive: boolean) => {
     setScheduleActive(nextActive)
