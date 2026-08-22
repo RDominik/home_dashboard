@@ -866,28 +866,28 @@ export default function Huehnerklappe() {
           <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13, color: selectedTheme.subtitleColor, fontWeight: 600 }}>Modus</span>
             <span style={{ fontSize: 13, color: selectedTheme.labelColor }}>Normal</span>
-            <label
-              style={{ display: 'inline-flex', alignItems: 'center', cursor: sending ? 'wait' : 'pointer', opacity: sending ? 0.6 : 1 }}
+            <button
+              type="button"
+              onClick={() => setScheduleEnabled(!scheduleActive)}
+              disabled={sending}
+              aria-label="Schedule-Modus aktivieren"
+              aria-pressed={scheduleActive}
               title="Zwischen Normal und Schedule umschalten"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: 'none',
+                padding: 0,
+                background: 'transparent',
+                cursor: sending ? 'wait' : 'pointer',
+                opacity: sending ? 0.6 : 1,
+              }}
             >
-              <input
-                type="checkbox"
-                checked={scheduleActive}
-                onChange={(e) => {
-                  if (e.target.checked) {
-                    setScheduleEnabled(true)
-                  } else {
-                    setScheduleEnabled(false)
-                  }
-                }}
-                disabled={sending}
-                aria-label="Schedule-Modus aktivieren"
-                style={{ position: 'absolute', opacity: 0, width: 1, height: 1, pointerEvents: 'none' }}
-              />
               <span style={scheduleToggleTrackStyle}>
                 <span style={scheduleToggleThumbStyle} />
               </span>
-            </label>
+            </button>
             <span style={{ fontSize: 13, color: selectedTheme.labelColor }}>Schedule</span>
           </div>
 
