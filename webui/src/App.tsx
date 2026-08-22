@@ -26,7 +26,7 @@ export default function App() {
   }).format(now)
 
   return (
-    <div style={{ display: 'flex', height: '100vh', background: '#cfcbcbea' }}>
+    <div style={{ display: 'flex', height: '100dvh', overflow: 'hidden', background: '#cfcbcbea' }}>
       <aside style={{ width: 260, borderRight: '1px solid #020202', padding: 16, background:'#cac6c6a9', display: 'flex', flexDirection: 'column' }}>
         <h2 style={{ marginTop: 0, letterSpacing: '0.2px' }}>Dashboards
           
@@ -46,7 +46,7 @@ export default function App() {
           <div>v0.1 (Preview)</div>
         </div>
       </aside>
-      <main style={{ flex: 1, padding: 20, overflow: 'auto', overflowAnchor: 'none' }}>
+      <main style={{ flex: 1, minHeight: 0, padding: 20, overflow: 'auto', overflowAnchor: 'none' }}>
         <Outlet />
       </main>
     </div>
