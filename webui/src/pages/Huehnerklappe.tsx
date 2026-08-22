@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react'
-import { useEffect, useLayoutEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 const API = '/api/huehnerklappe'
 
@@ -393,21 +393,6 @@ export default function Huehnerklappe() {
   const activateScheduleMode = () => {
     setControlMode('schedule')
   }
-
-  useLayoutEffect(() => {
-    const scrollContainer = document.querySelector('main') as HTMLElement | null
-    if (!scrollContainer) {
-      return
-    }
-
-    // Reset internal container scroll after the mode section has been swapped.
-    // A second frame prevents browser scroll anchoring from pulling it down again.
-    scrollContainer.scrollTop = 0
-    let frame = requestAnimationFrame(() => {
-      scrollContainer.scrollTop = 0
-    })
-    return () => cancelAnimationFrame(frame)
-  }, [controlMode])
 
   const setScheduleEnabled = async (nextActive: boolean) => {
     setScheduleActive(nextActive)
