@@ -26,7 +26,7 @@ export default function App() {
   }).format(now)
 
   return (
-    <div style={{ display: 'flex', height: '100dvh', overflow: 'hidden', background: '#cfcbcbea' }}>
+    <div style={{ display: 'flex', height: '100%', overflow: 'hidden', background: '#cfcbcbea' }}>
       <aside style={{ width: 260, flexShrink: 0, overflow: 'hidden', borderRight: '1px solid #020202', padding: 16, background:'#cac6c6a9', display: 'flex', flexDirection: 'column' }}>
         <h2 style={{ marginTop: 0, letterSpacing: '0.2px' }}>Dashboards
           
