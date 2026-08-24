@@ -2,6 +2,57 @@
 
 Ziel: Einfache Weboberfläche mit Seitenleiste, um verschiedene Dashboards anzuzeigen.
 
+## Frontend-Komponenten im Überblick
+
+### App-Struktur
+
+- `src/main.tsx`
+	- Router-Bootstrap und App-Start.
+	- Mountet `RouterProvider` auf `#root`.
+
+- `src/App.tsx`
+	- Globales Layout (Sidebar + Content-Bereich).
+	- Definiert Navigation und `Outlet`-Container.
+	- Enthält das Scroll-Layout (nur Content-Bereich scrollt).
+
+### Seiten (`src/pages`)
+
+- `DashboardHome.tsx`
+	- Startseite/Ubersicht.
+
+- `EnergyFlow.tsx`
+	- Energiefluss-Visualisierung (PV/Verbrauch/Batterie).
+
+- `Huehnerklappe.tsx`
+	- Steuerung fur die Huhnerklappe (manuell + Schedule).
+	- UI-State Synchronisierung mit Backend (`/api/huehnerklappe/ui-state`).
+	- Schedule-Konfiguration inklusive Zeitstempel, Aktionen und Verlauf.
+
+- `Heating.tsx` (+ `Heating.css`)
+	- ETA-Heizungsansicht.
+
+- `Grafana.tsx`
+	- Einbindung/Verlinkung von Grafana-Ansichten.
+
+- `goE.tsx`
+	- Seite fur goE-/Wallbox-nahe Daten oder Steuerung.
+
+- `UpdatePage.tsx`
+	- UI fur Update-Prozesse.
+
+- `Inverter.tsx`, `Wallbox.tsx`
+	- Weitere Seitenkomponenten fur Inverter-/Wallbox-Funktionen (je nach aktueller Router-Konfiguration eingebunden oder vorbereitet).
+
+### Gemeinsame Komponenten
+
+- `src/components/Charts.tsx`
+	- Wiederverwendbare Chart-Darstellung fur Dashboard-Seiten.
+
+### API-Anbindung im Frontend
+
+- Primar uber REST-Endpunkte, z. B. `/api/huehnerklappe/*`, `/api/wallbox/*`, `/api/inverter/*`.
+- Entwicklungsbetrieb typischerweise uber Vite-Dev-Server, Produktionsbetrieb uber Build + statisches Hosting.
+
 ## Entwicklung
 
 ```

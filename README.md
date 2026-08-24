@@ -1,5 +1,12 @@
 # eta
 
+## Dokumentation
+
+- [Web UI Dokumentation](webui/README.md)
+- [Backend (Go API) Dokumentation](api-go/README.md)
+
+Die beiden Unter-READMEs enthalten Details zu Komponenten, Laufzeitverhalten und lokalen Build-/Debug-Kommandos.
+
 ## Docker Start (Web UI + API)
 
 Schnellstart lokal mit Docker Compose:

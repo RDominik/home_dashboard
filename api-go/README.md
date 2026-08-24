@@ -6,6 +6,46 @@ Quick purpose
 - `cmd/wallbox-set` — small CLI to send `{ key, value }` to the API.
 - `rest` package — helper `PostJSON` used by the CLI.
 
+Backend components (folder map)
+
+- `main.go`
+	- Entrypoint for the Go API service.
+	- Wires MQTT manager, REST handlers and long-running services.
+
+- `mqtt/`
+	- MQTT client setup and broker connectivity.
+	- Loads broker settings from `mqtt/broker_config.json`.
+	- Central source for incoming topic payloads used by status endpoints.
+
+- `chickenDoor/`
+	- Huhnerklappe domain logic (manual control, schedule, wake/sleep flow).
+	- Persists UI/schedule state in bbolt (including timestamps, actions, auto-stop, history).
+	- Provides endpoints used by the Huehnerklappe UI (status, ui-state, schedule updates, commands).
+
+- `wallbox/`
+	- Wallbox domain logic and REST/MQTT mapping.
+	- Handles `status` aggregation and publishes `set` commands.
+
+- `rest/`
+	- Shared REST helper code and JSON POST utilities.
+	- Used by internal packages and CLI helpers.
+
+- `cmd/wallbox-set/`
+	- Standalone CLI for `PUT /api/wallbox/set`.
+	- Useful for smoke tests and automation scripts.
+
+- `cmd/rest-service/`
+	- Alternate command/service entrypoint with local configs in `cmd/rest-service/*.json`.
+
+- `cmd/rest-cli/`
+	- Small command-line helper for REST endpoint testing.
+
+High-level API areas
+
+- Wallbox: `/api/wallbox/status`, `/api/wallbox/set`
+- ChickenDoor (Huhnerklappe): status/ui-state/schedule/set endpoints under `/api/huehnerklappe/*`
+- MQTT debug/status: `/api/mqtt/status`
+
 Build & run (local dev)
 
 1. Start API (requires reachable MQTT broker configured in `mqtt/broker_config.json`):
