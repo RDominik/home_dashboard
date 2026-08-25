@@ -1,3 +1,3 @@
 module webgui-systemupdate
 
-go 1.21
+go 1.24.0
