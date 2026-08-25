@@ -29,6 +29,7 @@ const scheduleRetryDelay = 5 * time.Second
 const scheduleHistorySize = 20
 const defaultScheduleTimezone = "Europe/Berlin"
 const defaultMotorAutoStopSeconds = 15
+const scheduleEarlyWakeTolerance = 2 * time.Minute
 
 var scheduleLocation = struct {
 	once sync.Once
@@ -668,6 +669,40 @@ func (h *ChickenDoor) executeScheduleAction(action string) {
 	log.Printf("[chickendoor-schedule] action sent: %s", action)
 }
 
+// @brief Classifies wake timing against the planned wake-up timestamp.
+//
+// Uses the latest schedule history entry (sleep command timestamp + sleepSeconds)
+// as the planned wake-up reference. The return values are designed for schedule
+// transition decisions:
+//   - beforePlanned=true and withinTolerance=false: wake happened too early and
+//     is outside tolerance (action must be skipped; sleep is scheduled again).
+//   - beforePlanned=true and withinTolerance=true: wake is slightly early but
+//     accepted as on-time (normal action path).
+//   - beforePlanned=false: wake is on-time or late (normal action path).
+//
+// @param onlineTs Transition timestamp when controller became online.
+// @return beforePlanned true if onlineTs is before planned wake.
+// @return withinTolerance true if lead time is <= scheduleEarlyWakeTolerance.
+// @return lead lead time before planned wake; zero when not before planned wake.
+func (h *ChickenDoor) classifyWakeTiming(onlineTs time.Time) (bool, bool, time.Duration) {
+	if onlineTs.IsZero() || len(h.scheduleHistory) == 0 {
+		return false, false, 0
+	}
+
+	last := h.scheduleHistory[len(h.scheduleHistory)-1]
+	if last.SleepCommandAtMs <= 0 || last.SleepSeconds <= 0 {
+		return false, false, 0
+	}
+
+	plannedWake := time.UnixMilli(last.SleepCommandAtMs).Add(time.Duration(last.SleepSeconds) * time.Second)
+	if !onlineTs.Before(plannedWake) {
+		return false, false, 0
+	}
+
+	lead := plannedWake.Sub(onlineTs)
+	return true, lead <= scheduleEarlyWakeTolerance, lead
+}
+
 // @brief Updates transition state and timestamps for sleeping/online changes.
 //
 // On sleeping transition, sleepingAt is set. On sleeping->online, onlineAt,
@@ -716,9 +751,37 @@ func (h *ChickenDoor) updateStateTracking(controllerState, sleepState string, st
 			}
 		}
 		if h.scheduleActive {
-			// The action is sent immediately after wake-up. The following scheduler
-			// phase keeps the controller awake before sending the next sleep command.
-			h.scheduleWakeAt = time.Now()
+			// Wake timing decision matrix:
+			// 1) Wake before planned time and OUTSIDE tolerance:
+			//    - Skip the configured action for this transition.
+			//    - Immediately arm sleep scheduling again so the controller goes back
+			//      to sleep until the originally planned wake timestamp.
+			// 2) Wake before planned time but WITHIN tolerance:
+			//    - Treat as acceptable/on-time wake.
+			//    - Execute the normal schedule action path, then continue with the
+			//      awake-delay and next-cycle sleep scheduling.
+			// 3) Wake on or after planned time:
+			//    - Execute the normal schedule action path.
+			//    - Continue with the awake-delay and next-cycle sleep scheduling.
+			beforePlanned, withinTolerance, lead := h.classifyWakeTiming(stateTs)
+			if beforePlanned && !withinTolerance {
+				// Wake-up is too early and outside tolerance. Skip the action for this
+				// transition and immediately arm the sleep phase so the controller is
+				// put back to sleep until the planned wake timestamp.
+				h.scheduleSleepPending = true
+				h.scheduleWakeAt = time.Now()
+				log.Printf("[chickendoor-schedule] early wake outside tolerance (%s) -> skip action, schedule sleep until planned wake", lead.Round(time.Second))
+			} else {
+				// Wake-up is either within tolerance or on/after planned wake time.
+				// Execute the normal schedule action path, then continue with the
+				// configured awake-delay and next-cycle sleep scheduling.
+				h.scheduleWakeAt = time.Now()
+				if beforePlanned {
+					log.Printf("[chickendoor-schedule] early wake within tolerance (%s) -> execute normal action", lead.Round(time.Second))
+				} else {
+					log.Printf("[chickendoor-schedule] wake on/after planned time -> execute normal action")
+				}
+			}
 		}
 	}
 	h.lastControllerState = stateForTransition
