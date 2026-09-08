@@ -7,6 +7,7 @@ import (
 	"time"
 
 	chickendoorpkg "webgui-api/chickenDoor"
+	enyaqpkg "webgui-api/enyaq"
 	"webgui-api/mqtt"
 	restpkg "webgui-api/rest"
 	wallboxpkg "webgui-api/wallbox"
@@ -106,6 +107,12 @@ func main() {
 	defer chickenDoorService.Stop()
 	log.Println("🐔 ChickenDoor service started from main")
 
+	// Škoda Enyaq background telemetry service
+	enyaqService := enyaqpkg.NewService(mqttManager)
+	enyaqService.Start()
+	defer enyaqService.Stop()
+	log.Println("🚗 Škoda Enyaq service started from main")
+
 	// Router
 	mux := http.NewServeMux()
 
@@ -117,6 +124,9 @@ func main() {
 
 	// Hühnerklappe
 	mux.HandleFunc("/api/huehnerklappe/", chickenDoorService.APIHandler)
+
+	// Škoda Enyaq
+	mux.HandleFunc("/api/enyaq/", enyaqService.APIHandler)
 
 	// Inverter
 	mux.HandleFunc("/api/inverter/summary", inverterSummary)

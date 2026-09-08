@@ -9,6 +9,7 @@ import Grafana from './pages/Grafana'
 import UpdatePage from './pages/UpdatePage'
 import GoE from './pages/goE'
 import Huehnerklappe from './pages/Huehnerklappe'
+import EnyaqPage from './pages/Enyaq'
 
 const router = createBrowserRouter([
   {
@@ -17,6 +18,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <DashboardHome /> },
       { path: 'energy', element: <EnergyFlow /> },
+      { path: 'enyaq', element: <EnyaqPage /> },
       { path: 'heating', element: <Heating /> },
       { path: 'grafana', element: <Grafana /> },
       { path: 'huehnerklappe', element: <Huehnerklappe /> },

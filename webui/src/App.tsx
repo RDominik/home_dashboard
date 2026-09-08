@@ -34,6 +34,7 @@ export default function App() {
         <nav style={{ display: 'grid', gap: 6 }}>
           <NavLink to="/" style={linkStyle} end>Übersicht</NavLink>
           <NavLink to="/energy" style={linkStyle}>PV Energiefluss</NavLink>
+          <NavLink to="/enyaq" style={linkStyle}>Škoda Enyaq</NavLink>
           <NavLink to="/goE" style={linkStyle}>goE</NavLink>
           <NavLink to="/huehnerklappe" style={linkStyle}>Motor</NavLink>
           <NavLink to="/heating" style={linkStyle}>ETA Heizung</NavLink>
