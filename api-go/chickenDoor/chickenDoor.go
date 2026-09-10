@@ -145,10 +145,15 @@ type ChickenDoor struct {
 	mu          sync.Mutex
 
 	lastControllerState string
-	lastSleepCommandAt  time.Time
-	sleepingAt          time.Time
-	onlineAt            time.Time
-	wakeDeltaMs         int64
+	// lastStateMessageAt stores the latest accepted MQTT state timestamp used for
+	// transition detection. This suppresses duplicate schedule transitions caused
+	// by out-of-order or repeated state payloads that would otherwise retrigger
+	// the same sleeping->online cycle.
+	lastStateMessageAt time.Time
+	lastSleepCommandAt time.Time
+	sleepingAt         time.Time
+	onlineAt           time.Time
+	wakeDeltaMs        int64
 
 	scheduleAwakeSeconds  int
 	scheduleTimestamps    []string
@@ -723,6 +728,15 @@ func (h *ChickenDoor) updateStateTracking(controllerState, sleepState string, st
 
 	changed := false
 	h.mu.Lock()
+	if !h.lastStateMessageAt.IsZero() && !stateTs.After(h.lastStateMessageAt) {
+		// Ignore duplicate/stale state messages. Without this guard, repeated
+		// timestamps can replay sleeping/online transitions and trigger multiple
+		// schedule activations inside the same planned wake window.
+		h.mu.Unlock()
+		return
+	}
+	h.lastStateMessageAt = stateTs
+
 	if (stateForTransition == "sleeping" || stateForTransition == "offline") && h.lastControllerState != stateForTransition {
 		h.sleepingAt = stateTs
 		changed = true
