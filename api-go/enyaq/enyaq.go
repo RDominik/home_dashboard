@@ -792,11 +792,14 @@ func (s *Service) FetchVehicleData() error {
 
 	req.Header.Set("Accept", "application/json")
 	if token := strings.TrimSpace(cfg.APIToken); token != "" {
-		if !strings.HasPrefix(strings.ToLower(token), "bearer ") {
-			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
-		} else {
-			req.Header.Set("Authorization", token)
+		actualKey := token
+		if strings.HasPrefix(strings.ToLower(token), "bearer ") {
+			actualKey = strings.TrimSpace(token[7:])
 		}
+		// The official MyŠkoda Public API requires the X-API-Key header.
+		req.Header.Set("X-API-Key", actualKey)
+		// Fallback header for custom reverse proxies / generic endpoints.
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", actualKey))
 	}
 	if cfg.VIN != "" {
 		req.Header.Set("X-VIN", cfg.VIN)
@@ -808,6 +811,10 @@ func (s *Service) FetchVehicleData() error {
 		return err
 	}
 	defer resp.Body.Close()
+
+	if expiresAt := resp.Header.Get("X-API-Key-Expires-At"); expiresAt != "" {
+		log.Printf("[enyaq] API Key expires at: %s", expiresAt)
+	}
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {

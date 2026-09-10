@@ -696,11 +696,11 @@ export default function EnyaqPage() {
               {/* Token Field */}
               <div style={{ marginBottom: 16 }}>
                 <label style={{ display: 'block', fontWeight: 600, fontSize: 13, color: '#334155', marginBottom: 6 }}>
-                  API-Token / Bearer Secret:
+                  MyŠkoda API-Key / Token:
                 </label>
                 <input
                   type="password"
-                  placeholder={config?.hasToken ? `Aktueller Token aktiv (${config.tokenPreview}) - leer lassen für unverändert` : 'Bearer eyJhbGciOi...'}
+                  placeholder={config?.hasToken ? `Aktueller API-Key aktiv (${config.tokenPreview}) - leer lassen für unverändert` : 'MyŠkoda API-Key eingeben (z.B. aus der MyŠkoda App / go.skoda.eu/api-keys)'}
                   value={tokenInput}
                   onChange={e => setTokenInput(e.target.value)}
                   style={{
@@ -714,7 +714,7 @@ export default function EnyaqPage() {
                   }}
                 />
                 <span style={{ fontSize: 11, color: '#64748b', display: 'block', marginTop: 4 }}>
-                  {config?.hasToken ? `✅ Token vorhanden: ${config.tokenPreview}` : '❌ Noch kein Token gespeichert'}
+                  {config?.hasToken ? `✅ API-Key gespeichert: ${config.tokenPreview}` : '❌ Noch kein API-Key gespeichert'}
                 </span>
               </div>
 
