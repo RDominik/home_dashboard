@@ -35,7 +35,9 @@
             "nano/esp32/battery/percent",
             "nano/esp32/battery/rate",
             "nano/esp32/ip",
-            "nano/esp32/battery/charging"
+            "nano/esp32/battery/charging",
+            "nano/esp32/limit/close",
+            "nano/esp32/limit/open"
         ]
     }    
 }

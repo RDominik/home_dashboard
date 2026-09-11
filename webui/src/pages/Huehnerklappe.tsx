@@ -31,6 +31,8 @@ type HuehnerklappeStatus = {
   sleepState?: string
   ip?: string
   charging?: string
+  limitClose?: string
+  limitOpen?: string
   scheduleActive?: boolean
   scheduleTimezone?: string
   serverNowMs?: number
@@ -522,6 +524,18 @@ export default function Huehnerklappe() {
     return '—'
   }
 
+  const formatPositionLabel = (pos?: string) => {
+    if (!pos || pos === '—' || pos === '-') return '—'
+    const p = pos.toLowerCase().trim()
+    if (p === 'open' || p === 'offen' || p === 'auf') return 'offen'
+    if (p === 'closed' || p === 'close' || p === 'geschlossen' || p === 'schließen' || p === 'schliessen' || p === 'zu') return 'geschlossen'
+    if (p === 'stop') return 'gestoppt'
+    if (p === 'in bewegung' || p === 'moving' || p === 'fahrt' || p === 'laeuft') return 'in Bewegung'
+    if (p === 'zwischenposition') return 'Zwischenposition'
+    if (p === 'ok') return 'bereit'
+    return pos
+  }
+
   const scheduleHistoryRows = (() => {
     const entries = Array.isArray(status?.scheduleHistory)
       ? [...status.scheduleHistory].slice(-20).reverse()
@@ -574,7 +588,9 @@ export default function Huehnerklappe() {
             <StatusItem label="Akku" value={battery !== null && battery !== '' ? `${battery}%` : '—'} />
             <StatusItem label="Charging" value={charging ?? '—'} />
             <StatusItem label="IP" value={status.ip ?? '—'} />
-            <StatusItem label="Position" value={status.position ?? '—'} />
+            <StatusItem label="Position" value={formatPositionLabel(status.position)} />
+            <StatusItem label="Endschalter ZU" value={status.limitClose ?? '—'} />
+            <StatusItem label="Endschalter AUF" value={status.limitOpen ?? '—'} />
             <StatusItem label="Letzte Aktion" value={status.lastAction ?? '—'} />
             <StatusItem label="Controller" value={status.controllerState ?? '—'} />
             <StatusItem label="Sleep-ACK" value={status.sleepState ?? '—'} />
@@ -916,14 +932,14 @@ export default function Huehnerklappe() {
                       <td style={{ padding: '8px 12px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>{scheduleEntryState(entry)}</td>
                       <td style={{ padding: '8px 12px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>
                         <span style={{
-                          fontWeight: entry?.endPosition ? 600 : 'normal',
-                          color: entry?.endPosition === 'open' || entry?.endPosition === 'offen'
+                          fontWeight: entry?.endPosition ? 700 : 'normal',
+                          color: entry?.endPosition?.toLowerCase() === 'open' || entry?.endPosition?.toLowerCase() === 'offen' || entry?.endPosition?.toLowerCase() === 'auf'
                             ? '#059669'
-                            : entry?.endPosition === 'closed' || entry?.endPosition === 'schließen' || entry?.endPosition === 'geschlossen'
+                            : entry?.endPosition?.toLowerCase() === 'closed' || entry?.endPosition?.toLowerCase() === 'schließen' || entry?.endPosition?.toLowerCase() === 'geschlossen' || entry?.endPosition?.toLowerCase() === 'zu'
                             ? '#dc2626'
                             : selectedTheme.labelColor,
                         }}>
-                          {entry?.endPosition || '—'}
+                          {formatPositionLabel(entry?.endPosition)}
                         </span>
                       </td>
                       <td style={{ padding: '8px 12px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>
