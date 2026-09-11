@@ -81,12 +81,31 @@ type StatusResponse struct {
 	ScheduleHistory  []ScheduleHistoryEntry `json:"scheduleHistory,omitempty"`
 }
 
+// @brief Represents a single execution cycle in the schedule history.
+//
+// Tracks the planned sleep duration, actual sleep/wake timestamps, battery state,
+// final motor end position, and the duration the motor ran in seconds.
 type ScheduleHistoryEntry struct {
-	SleepSeconds     int    `json:"sleepSeconds"`
-	BatteryPercent   string `json:"batteryPercent,omitempty"`
-	SleepCommandAtMs int64  `json:"sleepCommandAtMs,omitempty"`
-	SleepingAtMs     int64  `json:"sleepingAtMs,omitempty"`
-	WokeUpAtMs       int64  `json:"wokeUpAtMs,omitempty"`
+	// @brief Planned sleep duration in seconds for this cycle.
+	SleepSeconds int `json:"sleepSeconds"`
+
+	// @brief Battery percentage string at time of sleep command.
+	BatteryPercent string `json:"batteryPercent,omitempty"`
+
+	// @brief Epoch timestamp in milliseconds when the sleep command was published.
+	SleepCommandAtMs int64 `json:"sleepCommandAtMs,omitempty"`
+
+	// @brief Epoch timestamp in milliseconds when the controller confirmed entering sleep state.
+	SleepingAtMs int64 `json:"sleepingAtMs,omitempty"`
+
+	// @brief Epoch timestamp in milliseconds when the controller woke up and became online.
+	WokeUpAtMs int64 `json:"wokeUpAtMs,omitempty"`
+
+	// @brief Final end position reached by the door after motor movement (e.g. "open", "closed", "offen", "geschlossen", "stop").
+	EndPosition string `json:"endPosition,omitempty"`
+
+	// @brief Duration in seconds that the motor ran during this wake-up cycle.
+	MotorDurationSec float64 `json:"motorDurationSec,omitempty"`
 }
 
 // @brief Converts a timestamp to Unix milliseconds.
@@ -185,24 +204,26 @@ type ChickenDoor struct {
 }
 
 type persistedState struct {
-	ScheduleAwakeSeconds int                    `json:"scheduleAwakeSeconds"`
-	ScheduleTimestamps   []string               `json:"scheduleTimestamps"`
-	ScheduleEntries      []ScheduleEntry        `json:"scheduleEntries,omitempty"`
-	ScheduleActive       bool                   `json:"scheduleActive"`
-	ScheduleHistory      []ScheduleHistoryEntry `json:"scheduleHistory"`
-	SleepTime            int                    `json:"sleepTime"`
-	MotorAutoStopSeconds int                    `json:"motorAutoStopSeconds"`
-	SleepUntil           string                 `json:"sleepUntil"`
-	ControlMode          string                 `json:"controlMode"`
-	HistoryExpanded      bool                   `json:"historyExpanded"`
-	LastStatusPosition   string                 `json:"lastStatusPosition"`
-	LastStatusAction     string                 `json:"lastStatusAction"`
-	LastStatusBattery    string                 `json:"lastStatusBattery"`
-	LastStatusWakeReason string                 `json:"lastStatusWakeReason"`
-	LastStatusController string                 `json:"lastStatusController"`
-	LastStatusSleep      string                 `json:"lastStatusSleep"`
-	LastStatusIP         string                 `json:"lastStatusIP"`
-	LastStatusCharging   string                 `json:"lastStatusCharging"`
+	ScheduleAwakeSeconds  int                    `json:"scheduleAwakeSeconds"`
+	ScheduleTimestamps    []string               `json:"scheduleTimestamps"`
+	ScheduleEntries       []ScheduleEntry        `json:"scheduleEntries,omitempty"`
+	ScheduleActive        bool                   `json:"scheduleActive"`
+	PendingScheduleAction string                 `json:"pendingScheduleAction,omitempty"`
+	ScheduleSleepPending  bool                   `json:"scheduleSleepPending,omitempty"`
+	ScheduleHistory       []ScheduleHistoryEntry `json:"scheduleHistory"`
+	SleepTime             int                    `json:"sleepTime"`
+	MotorAutoStopSeconds  int                    `json:"motorAutoStopSeconds"`
+	SleepUntil            string                 `json:"sleepUntil"`
+	ControlMode           string                 `json:"controlMode"`
+	HistoryExpanded       bool                   `json:"historyExpanded"`
+	LastStatusPosition    string                 `json:"lastStatusPosition"`
+	LastStatusAction      string                 `json:"lastStatusAction"`
+	LastStatusBattery     string                 `json:"lastStatusBattery"`
+	LastStatusWakeReason  string                 `json:"lastStatusWakeReason"`
+	LastStatusController  string                 `json:"lastStatusController"`
+	LastStatusSleep       string                 `json:"lastStatusSleep"`
+	LastStatusIP          string                 `json:"lastStatusIP"`
+	LastStatusCharging    string                 `json:"lastStatusCharging"`
 }
 
 type uiStateRequest struct {
@@ -304,6 +325,8 @@ func (h *ChickenDoor) loadPersistedState() {
 		}
 	}
 	h.scheduleActive = state.ScheduleActive
+	h.pendingScheduleAction = state.PendingScheduleAction
+	h.scheduleSleepPending = state.ScheduleSleepPending
 	h.scheduleHistory = append([]ScheduleHistoryEntry(nil), state.ScheduleHistory...)
 	h.sleepTime = state.SleepTime
 	h.motorAutoStopSeconds = state.MotorAutoStopSeconds
@@ -343,24 +366,26 @@ func (h *ChickenDoor) persistState() {
 
 	h.mu.Lock()
 	state := persistedState{
-		ScheduleAwakeSeconds: h.scheduleAwakeSeconds,
-		ScheduleTimestamps:   append([]string(nil), h.scheduleTimestamps...),
-		ScheduleEntries:      append([]ScheduleEntry(nil), h.scheduleEntries...),
-		ScheduleActive:       h.scheduleActive,
-		ScheduleHistory:      append([]ScheduleHistoryEntry(nil), h.scheduleHistory...),
-		SleepTime:            h.sleepTime,
-		MotorAutoStopSeconds: h.motorAutoStopSeconds,
-		SleepUntil:           h.sleepUntil,
-		ControlMode:          h.controlMode,
-		HistoryExpanded:      h.historyExpanded,
-		LastStatusPosition:   h.lastStatusPosition,
-		LastStatusAction:     h.lastStatusAction,
-		LastStatusBattery:    h.lastStatusBattery,
-		LastStatusWakeReason: h.lastStatusWakeReason,
-		LastStatusController: h.lastStatusController,
-		LastStatusSleep:      h.lastStatusSleep,
-		LastStatusIP:         h.lastStatusIP,
-		LastStatusCharging:   h.lastStatusCharging,
+		ScheduleAwakeSeconds:  h.scheduleAwakeSeconds,
+		ScheduleTimestamps:    append([]string(nil), h.scheduleTimestamps...),
+		ScheduleEntries:       append([]ScheduleEntry(nil), h.scheduleEntries...),
+		ScheduleActive:        h.scheduleActive,
+		PendingScheduleAction: h.pendingScheduleAction,
+		ScheduleSleepPending:  h.scheduleSleepPending,
+		ScheduleHistory:       append([]ScheduleHistoryEntry(nil), h.scheduleHistory...),
+		SleepTime:             h.sleepTime,
+		MotorAutoStopSeconds:  h.motorAutoStopSeconds,
+		SleepUntil:            h.sleepUntil,
+		ControlMode:           h.controlMode,
+		HistoryExpanded:       h.historyExpanded,
+		LastStatusPosition:    h.lastStatusPosition,
+		LastStatusAction:      h.lastStatusAction,
+		LastStatusBattery:     h.lastStatusBattery,
+		LastStatusWakeReason:  h.lastStatusWakeReason,
+		LastStatusController:  h.lastStatusController,
+		LastStatusSleep:       h.lastStatusSleep,
+		LastStatusIP:          h.lastStatusIP,
+		LastStatusCharging:    h.lastStatusCharging,
 	}
 	h.mu.Unlock()
 
@@ -412,10 +437,12 @@ func isMotorRunningPosition(position string) bool {
 		strings.Contains(value, "laeuft")
 }
 
-// @brief Enforces automatic motor stop after the configured timeout.
+// @brief Enforces automatic motor stop after the configured timeout and tracks run duration.
 //
 // When engine_status still indicates movement after motorAutoStopSeconds, this
-// method publishes "stop" to the engine topic and clears the running timer.
+// method publishes "stop" to the engine topic, calculates the total run duration,
+// updates the latest schedule history entry with end position and runtime, and clears
+// the running timer. It also captures motor run completion when the engine stops on its own.
 func (h *ChickenDoor) autoStopTick() {
 	msgs := h.mqttManager.Messages()
 	position := toString(msgs["engine_status"])
@@ -426,22 +453,74 @@ func (h *ChickenDoor) autoStopTick() {
 	h.motorAutoStopSeconds = timeoutSeconds
 
 	now := time.Now()
+	changed := false
+
+	// Case 1: Motor is not recorded as running yet, but MQTT reports active movement.
 	if h.motorRunningSince.IsZero() {
 		if !running {
+			// Motor is idle and not running. If a wake cycle is active and end position is updated,
+			// keep the latest position synchronized in the active history entry.
+			if position != "" && position != "unbekannt" {
+				if n := len(h.scheduleHistory); n > 0 && h.scheduleHistory[n-1].WokeUpAtMs > 0 {
+					if h.scheduleHistory[n-1].EndPosition != position {
+						h.scheduleHistory[n-1].EndPosition = position
+						changed = true
+					}
+				}
+			}
 			h.mu.Unlock()
+			if changed {
+				h.persistState()
+			}
 			return
 		}
+		// Motor has just started running; arm timestamp.
 		h.motorRunningSince = now
 		h.mu.Unlock()
 		return
 	}
 
+	// Case 2: Motor was recorded as running.
 	runningSince := h.motorRunningSince
+	elapsedSec := math.Round(now.Sub(runningSince).Seconds()*10) / 10
 	shouldStop := now.Sub(runningSince) >= time.Duration(timeoutSeconds)*time.Second
+
+	// Subcase 2a: Motor stopped moving on its own (e.g. limit switch triggered before timeout).
+	if !running && !shouldStop {
+		h.motorRunningSince = time.Time{}
+		if n := len(h.scheduleHistory); n > 0 {
+			h.scheduleHistory[n-1].MotorDurationSec = elapsedSec
+			if position != "" && position != "unbekannt" {
+				h.scheduleHistory[n-1].EndPosition = position
+			}
+			changed = true
+		}
+		h.mu.Unlock()
+		if changed {
+			h.persistState()
+		}
+		log.Printf("[chickendoor-autostop] motor finished normally after %.1fs (engine_status=%s)", elapsedSec, position)
+		return
+	}
+
+	// Subcase 2b: Motor exceeded the configured auto-stop timeout.
 	if shouldStop {
 		h.motorRunningSince = time.Time{}
+		if n := len(h.scheduleHistory); n > 0 {
+			h.scheduleHistory[n-1].MotorDurationSec = elapsedSec
+			if position != "" && position != "unbekannt" {
+				h.scheduleHistory[n-1].EndPosition = position
+			} else {
+				h.scheduleHistory[n-1].EndPosition = "stop"
+			}
+			changed = true
+		}
 	}
 	h.mu.Unlock()
+
+	if changed {
+		h.persistState()
+	}
 
 	if !shouldStop {
 		return
@@ -452,7 +531,7 @@ func (h *ChickenDoor) autoStopTick() {
 		return
 	}
 
-	log.Printf("[chickendoor-autostop] auto-stop sent after %ds (engine_status=%s)", timeoutSeconds, position)
+	log.Printf("[chickendoor-autostop] auto-stop sent after %ds (engine_status=%s, duration=%.1fs)", timeoutSeconds, position, elapsedSec)
 
 	h.mu.Lock()
 	h.lastStatusAction = "stop"
@@ -619,6 +698,18 @@ func (h *ChickenDoor) scheduleSleepUntilNext(reason string) bool {
 	}
 
 	h.mu.Lock()
+	// Finalize previous schedule history entry before appending a new one.
+	if n := len(h.scheduleHistory); n > 0 {
+		if !h.motorRunningSince.IsZero() {
+			elapsedSec := math.Round(time.Since(h.motorRunningSince).Seconds()*10) / 10
+			h.scheduleHistory[n-1].MotorDurationSec = elapsedSec
+			h.motorRunningSince = time.Time{}
+		}
+		if h.scheduleHistory[n-1].EndPosition == "" && h.lastStatusPosition != "" && h.lastStatusPosition != "unbekannt" {
+			h.scheduleHistory[n-1].EndPosition = h.lastStatusPosition
+		}
+	}
+
 	h.pendingScheduleAction = normalizeScheduleAction(nextEntry.Action)
 	h.scheduleSleepPending = false
 	nowTs := time.Now()
@@ -649,6 +740,53 @@ func normalizeScheduleAction(action string) string {
 	default:
 		return "none"
 	}
+}
+
+// @brief Finds the schedule action for the entry closest to the given time within tolerance.
+//
+// Examines all configured schedule entries and compares their parsed time against
+// the reference time (taking day and midnight wrap-around into account). If the closest
+// entry is within maxDiff, its normalized action is returned.
+// @param now Reference timestamp (e.g. wake-up time).
+// @param entries List of configured schedule entries.
+// @param maxDiff Maximum time difference allowed to consider an entry matching.
+// @return The normalized action (e.g. "open", "close", "stop"), or "none".
+func findMatchingScheduleAction(now time.Time, entries []ScheduleEntry, maxDiff time.Duration) string {
+	if len(entries) == 0 {
+		return "none"
+	}
+
+	bestDiff := time.Duration(1<<63 - 1)
+	bestAction := "none"
+
+	for _, entry := range entries {
+		cand, err := parseScheduleTimestampForDay(now, entry.Timestamp)
+		if err != nil {
+			continue
+		}
+
+		candidates := []time.Time{
+			cand,
+			cand.Add(-24 * time.Hour),
+			cand.Add(24 * time.Hour),
+		}
+
+		for _, c := range candidates {
+			diff := now.Sub(c)
+			if diff < 0 {
+				diff = -diff
+			}
+			if diff < bestDiff {
+				bestDiff = diff
+				bestAction = normalizeScheduleAction(entry.Action)
+			}
+		}
+	}
+
+	if bestDiff <= maxDiff {
+		return bestAction
+	}
+	return "none"
 }
 
 func (h *ChickenDoor) executeScheduleAction(action string) {
@@ -855,6 +993,10 @@ func (h *ChickenDoor) scheduleTick() {
 		action := h.pendingScheduleAction
 		waitingToSleep := h.scheduleSleepPending
 		if !waitingToSleep {
+			if action == "" || action == "none" {
+				action = findMatchingScheduleAction(time.Now(), h.scheduleEntries, 15*time.Minute)
+				log.Printf("[chickendoor-schedule] fallback matching action resolved: '%s'", action)
+			}
 			h.pendingScheduleAction = ""
 			h.scheduleSleepPending = true
 			h.scheduleWakeAt = time.Now().Add(time.Duration(h.scheduleAwakeSeconds) * time.Second)
@@ -862,6 +1004,8 @@ func (h *ChickenDoor) scheduleTick() {
 			h.scheduleSleepPending = false
 		}
 		h.mu.Unlock()
+		h.persistState()
+
 		if !waitingToSleep {
 			h.executeScheduleAction(action)
 			return
@@ -1067,6 +1211,13 @@ func (h *ChickenDoor) StatusHandler(w http.ResponseWriter, r *http.Request) {
 		h.lastStatusSleep = sleepState
 		h.lastStatusIP = ip
 		h.lastStatusCharging = charging
+
+		// Keep active history entry end position synchronized if motor has finished moving
+		if position != "" && position != "unbekannt" && !isMotorRunningPosition(position) {
+			if n := len(h.scheduleHistory); n > 0 && h.scheduleHistory[n-1].WokeUpAtMs > 0 {
+				h.scheduleHistory[n-1].EndPosition = position
+			}
+		}
 	}
 	historyCopy := append([]ScheduleHistoryEntry(nil), h.scheduleHistory...)
 
@@ -1244,6 +1395,13 @@ func (h *ChickenDoor) SetHandler(w http.ResponseWriter, r *http.Request) {
 		if command == "open" || command == "close" {
 			h.motorRunningSince = time.Now()
 		} else if command == "stop" {
+			if !h.motorRunningSince.IsZero() {
+				elapsedSec := math.Round(time.Since(h.motorRunningSince).Seconds()*10) / 10
+				if n := len(h.scheduleHistory); n > 0 {
+					h.scheduleHistory[n-1].MotorDurationSec = elapsedSec
+					h.scheduleHistory[n-1].EndPosition = "stop"
+				}
+			}
 			h.motorRunningSince = time.Time{}
 		}
 		h.mu.Unlock()

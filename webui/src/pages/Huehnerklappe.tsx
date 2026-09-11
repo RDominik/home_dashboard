@@ -17,6 +17,8 @@ type ScheduleHistoryEntry = {
   sleepCommandAtMs?: number
   sleepingAtMs?: number
   wokeUpAtMs?: number
+  endPosition?: string
+  motorDurationSec?: number
 }
 
 type HuehnerklappeStatus = {
@@ -898,6 +900,8 @@ export default function Huehnerklappe() {
                   <tr style={{ background: selectedTheme.rowBg }}>
                     <th style={{ textAlign: 'left', padding: '10px 12px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>#</th>
                     <th style={{ textAlign: 'left', padding: '10px 12px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>Status</th>
+                    <th style={{ textAlign: 'left', padding: '10px 12px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>Endposition</th>
+                    <th style={{ textAlign: 'left', padding: '10px 12px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>Motorlaufzeit</th>
                     <th style={{ textAlign: 'left', padding: '10px 12px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>Akku (%)</th>
                     <th style={{ textAlign: 'left', padding: '10px 12px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>Sleep (Sek.)</th>
                     <th style={{ textAlign: 'left', padding: '10px 12px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>Sleep gesendet um</th>
@@ -910,6 +914,23 @@ export default function Huehnerklappe() {
                     <tr key={idx}>
                       <td style={{ padding: '8px 12px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>{idx + 1}</td>
                       <td style={{ padding: '8px 12px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>{scheduleEntryState(entry)}</td>
+                      <td style={{ padding: '8px 12px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>
+                        <span style={{
+                          fontWeight: entry?.endPosition ? 600 : 'normal',
+                          color: entry?.endPosition === 'open' || entry?.endPosition === 'offen'
+                            ? '#059669'
+                            : entry?.endPosition === 'closed' || entry?.endPosition === 'schließen' || entry?.endPosition === 'geschlossen'
+                            ? '#dc2626'
+                            : selectedTheme.labelColor,
+                        }}>
+                          {entry?.endPosition || '—'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '8px 12px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>
+                        {typeof entry?.motorDurationSec === 'number' && entry.motorDurationSec > 0
+                          ? `${entry.motorDurationSec.toFixed(1)} s`
+                          : '—'}
+                      </td>
                       <td style={{ padding: '8px 12px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>{entry?.batteryPercent ?? '—'}</td>
                       <td style={{ padding: '8px 12px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>{entry?.sleepSeconds ?? '—'}</td>
                       <td style={{ padding: '8px 12px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>{formatStatusTimestamp(entry?.sleepCommandAtMs)}</td>
