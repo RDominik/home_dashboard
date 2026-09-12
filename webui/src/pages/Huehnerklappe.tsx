@@ -560,7 +560,7 @@ export default function Huehnerklappe() {
   }
 
   return (
-    <div style={{ maxWidth: 700, margin: '0 auto' }}>
+    <div style={{ width: '100%', maxWidth: 1200, minWidth: 0, margin: '0 auto', boxSizing: 'border-box' }}>
       <h1 style={{ marginBottom: 4 }}>Hühnerklappe Steuerung</h1>
       <p style={{ color: '#6b7280', marginTop: 0, marginBottom: 24 }}>
         Klappe öffnen/schließen und Status anzeigen
@@ -584,7 +584,7 @@ export default function Huehnerklappe() {
       <div style={{ ...cardStyle, marginBottom: 16 }}>
         <h3 style={{ marginTop: 0, color: '#374151' }}>📊 Aktueller Status</h3>
         {status ? (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 210px), 1fr))', gap: 12 }}>
             <StatusItem label="Akku" value={battery !== null && battery !== '' ? `${battery}%` : '—'} />
             <StatusItem label="Charging" value={charging ?? '—'} />
             <StatusItem label="IP" value={status.ip ?? '—'} />

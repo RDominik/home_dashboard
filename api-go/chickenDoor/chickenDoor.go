@@ -191,6 +191,8 @@ type ChickenDoor struct {
 	historyExpanded       bool
 	// motorRunningSince stores the timestamp when the motor was commanded or detected to start moving.
 	motorRunningSince time.Time
+	// motorRunningAction stores the active motor command direction ("open", "close", "stop").
+	motorRunningAction string
 	// motorLimitReachedAt stores the timestamp when a limit switch became active during movement.
 	motorLimitReachedAt time.Time
 
@@ -463,15 +465,21 @@ func isLimitActive(val string) bool {
 
 // @brief Resolves semantic door position ("geschlossen", "offen", "in Bewegung", etc.)
 //
-// Evaluates limit switch states (open/close) first. If a limit switch is actively triggered,
-// it determines the exact end position ("geschlossen" or "offen"). If neither switch is active,
-// it falls back to motor running status or explicit keywords in engine status.
+// Evaluates limit switch states (open/close) first:
+// - If close switch is active -> "geschlossen".
+// - If open switch is active -> "offen".
+// - If motor is currently running -> "in Bewegung".
+// - If last commanded action was "open" and close switch is released -> "offen".
+// - If last commanded action was "close" and close switch is active -> "geschlossen".
+// - If explicit position text is present in engineStatus -> mapped accordingly.
+// - Otherwise "Zwischenposition" (e.g. stopped midway).
 //
 // @param limitClose Current state of close limit switch (e.g. "ACTIVE" / "released").
 // @param limitOpen Current state of open limit switch (e.g. "ACTIVE" / "released").
 // @param engineStatus Raw engine status string from MQTT.
-// @return Resolved end position ("geschlossen", "offen", "in Bewegung", "zwischenposition", or the raw status).
-func resolveDoorPosition(limitClose, limitOpen, engineStatus string) string {
+// @param lastAction Last commanded action ("open", "close", "stop").
+// @return Resolved end position ("geschlossen", "offen", "in Bewegung", "Zwischenposition", or raw status).
+func resolveDoorPosition(limitClose, limitOpen, engineStatus, lastAction string) string {
 	closeActive := isLimitActive(limitClose)
 	openActive := isLimitActive(limitOpen)
 
@@ -486,23 +494,35 @@ func resolveDoorPosition(limitClose, limitOpen, engineStatus string) string {
 		return "in Bewegung"
 	}
 
-	norm := strings.ToLower(strings.TrimSpace(engineStatus))
+	normStatus := strings.ToLower(strings.TrimSpace(engineStatus))
 	switch {
-	case strings.Contains(norm, "geschlossen") || strings.Contains(norm, "close") || strings.Contains(norm, "zu"):
+	case strings.Contains(normStatus, "geschlossen") || strings.Contains(normStatus, "close") || strings.Contains(normStatus, "zu"):
 		return "geschlossen"
-	case strings.Contains(norm, "offen") || strings.Contains(norm, "open") || strings.Contains(norm, "auf"):
+	case strings.Contains(normStatus, "offen") || strings.Contains(normStatus, "open") || strings.Contains(normStatus, "auf"):
 		return "offen"
-	case norm == "ok" || norm == "stop" || norm == "":
+	}
+
+	normAction := strings.ToLower(strings.TrimSpace(lastAction))
+	switch normAction {
+	case "open", "öffnen", "oeffnen":
+		if !closeActive {
+			return "offen"
+		}
+	case "close", "schließen", "schliessen":
 		if closeActive {
 			return "geschlossen"
 		}
-		if openActive {
-			return "offen"
-		}
-		return "zwischenposition"
-	default:
-		return engineStatus
+		return "Zwischenposition"
 	}
+
+	if closeActive {
+		return "geschlossen"
+	}
+	if openActive {
+		return "offen"
+	}
+
+	return "Zwischenposition"
 }
 
 // @brief Enforces automatic motor stop after the configured timeout and tracks run duration.
@@ -516,7 +536,7 @@ func (h *ChickenDoor) autoStopTick() {
 	position := toString(msgs["engine_status"])
 	limitClose := toString(firstValue(msgs, "limit_close", "limit/close"))
 	limitOpen := toString(firstValue(msgs, "limit_open", "limit/open"))
-	running := isMotorRunningPosition(position)
+	runningFromMqtt := isMotorRunningPosition(position)
 
 	h.mu.Lock()
 	if limitClose == "" {
@@ -530,18 +550,17 @@ func (h *ChickenDoor) autoStopTick() {
 		h.lastStatusLimitOpen = limitOpen
 	}
 
-	doorPos := resolveDoorPosition(limitClose, limitOpen, position)
 	timeoutSeconds := clampMotorAutoStopSeconds(h.motorAutoStopSeconds)
 	h.motorAutoStopSeconds = timeoutSeconds
 
 	now := time.Now()
 	changed := false
 
-	// Case 1: Motor is not recorded as running yet, but MQTT reports active movement.
+	// Case 1: Motor is not recorded as running yet.
 	if h.motorRunningSince.IsZero() {
-		if !running {
-			// Motor is idle and not running. If a wake cycle is active and end position is updated,
-			// keep the resolved end position synchronized in the active history entry.
+		if !runningFromMqtt {
+			doorPos := resolveDoorPosition(limitClose, limitOpen, position, h.lastStatusAction)
+			// Keep the resolved end position synchronized in the active history entry.
 			if doorPos != "" && doorPos != "unbekannt" {
 				if n := len(h.scheduleHistory); n > 0 && h.scheduleHistory[n-1].WokeUpAtMs > 0 {
 					if h.scheduleHistory[n-1].EndPosition != doorPos {
@@ -556,102 +575,91 @@ func (h *ChickenDoor) autoStopTick() {
 			}
 			return
 		}
-		// Motor has just started running; arm timestamp and reset limit reached marker.
+		// Motor was reported running via MQTT unsolicited.
 		h.motorRunningSince = now
+		h.motorRunningAction = position
 		h.motorLimitReachedAt = time.Time{}
 		h.mu.Unlock()
 		return
 	}
 
-	// Case 2: Motor was recorded as running.
+	// Case 2: Motor is actively running.
 	runningSince := h.motorRunningSince
-	elapsedSec := math.Round(now.Sub(runningSince).Seconds()*10) / 10
-	shouldStop := now.Sub(runningSince) >= time.Duration(timeoutSeconds)*time.Second
+	runningAction := h.motorRunningAction
+	elapsed := now.Sub(runningSince)
+	elapsedSec := math.Round(elapsed.Seconds()*10) / 10
+	shouldStopByTimeout := elapsed >= time.Duration(timeoutSeconds)*time.Second
 
 	closeActive := isLimitActive(limitClose)
 	openActive := isLimitActive(limitOpen)
 
-	// Detect if a limit switch was reached during this run and freeze the limit reach timestamp.
-	if closeActive || openActive {
-		var hitTime time.Time
-		if closeActive {
-			if ts, ok := h.firstMessageTimestamp("limit_close", "limit/close"); ok && ts.After(runningSince) {
-				hitTime = ts
-			}
-		}
-		if openActive && hitTime.IsZero() {
-			if ts, ok := h.firstMessageTimestamp("limit_open", "limit/open"); ok && ts.After(runningSince) {
-				hitTime = ts
-			}
-		}
-		if hitTime.IsZero() {
-			hitTime = now
-		}
+	// Check if a target limit switch has been reached for the active movement.
+	limitReached := false
+	if (runningAction == "close" || runningAction == "schließen" || runningAction == "schliessen") && closeActive {
+		limitReached = true
+	} else if (runningAction == "open" || runningAction == "öffnen" || runningAction == "oeffnen") && openActive {
+		limitReached = true
+	}
 
+	if limitReached {
 		if h.motorLimitReachedAt.IsZero() {
-			h.motorLimitReachedAt = hitTime
-			limitElapsedSec := math.Round(hitTime.Sub(runningSince).Seconds()*10) / 10
-			if limitElapsedSec < 0.1 {
-				limitElapsedSec = 0.1
-			}
-			if n := len(h.scheduleHistory); n > 0 {
-				h.scheduleHistory[n-1].MotorDurationSec = limitElapsedSec
-				if doorPos != "" && doorPos != "unbekannt" {
-					h.scheduleHistory[n-1].EndPosition = doorPos
+			var hitTime time.Time
+			if closeActive {
+				if ts, ok := h.firstMessageTimestamp("limit_close", "limit/close"); ok && ts.After(runningSince) {
+					hitTime = ts
 				}
-				changed = true
 			}
-			log.Printf("[chickendoor-autostop] limit switch reached after %.1fs (endPosition=%s)", limitElapsedSec, doorPos)
+			if openActive && hitTime.IsZero() {
+				if ts, ok := h.firstMessageTimestamp("limit_open", "limit/open"); ok && ts.After(runningSince) {
+					hitTime = ts
+				}
+			}
+			if hitTime.IsZero() {
+				hitTime = now
+			}
+			h.motorLimitReachedAt = hitTime
 		}
 	}
 
-	// Subcase 2a: Motor stopped moving on its own (e.g. limit switch triggered before timeout).
-	if !running && !shouldStop {
-		var durationSec float64
-		if !h.motorLimitReachedAt.IsZero() {
-			durationSec = math.Round(h.motorLimitReachedAt.Sub(runningSince).Seconds()*10) / 10
-		} else {
-			durationSec = elapsedSec
+	// Movement concludes when:
+	// 1) Target limit switch was hit, OR
+	// 2) Auto-stop timeout expired.
+	movementDone := false
+	if !h.motorLimitReachedAt.IsZero() {
+		if now.Sub(h.motorLimitReachedAt) >= 500*time.Millisecond || !runningFromMqtt {
+			movementDone = true
 		}
-		if durationSec < 0.1 {
-			durationSec = elapsedSec
-		}
-		h.motorRunningSince = time.Time{}
-		h.motorLimitReachedAt = time.Time{}
-		if n := len(h.scheduleHistory); n > 0 {
-			h.scheduleHistory[n-1].MotorDurationSec = durationSec
-			if doorPos != "" && doorPos != "unbekannt" {
-				h.scheduleHistory[n-1].EndPosition = doorPos
-			}
-			changed = true
-		}
-		h.mu.Unlock()
-		if changed {
-			h.persistState()
-		}
-		log.Printf("[chickendoor-autostop] motor finished normally after %.1fs (endPosition=%s)", durationSec, doorPos)
-		return
+	} else if shouldStopByTimeout {
+		movementDone = true
 	}
 
-	// Subcase 2b: Motor exceeded the configured auto-stop timeout.
-	if shouldStop {
-		var durationSec float64
-		if !h.motorLimitReachedAt.IsZero() {
-			durationSec = math.Round(h.motorLimitReachedAt.Sub(runningSince).Seconds()*10) / 10
-		} else {
-			durationSec = elapsedSec
+	// Calculate current duration
+	var currentDuration float64
+	if !h.motorLimitReachedAt.IsZero() {
+		currentDuration = math.Round(h.motorLimitReachedAt.Sub(runningSince).Seconds()*10) / 10
+	} else {
+		currentDuration = elapsedSec
+	}
+	if currentDuration < 0.1 {
+		currentDuration = 0.1
+	}
+
+	doorPos := resolveDoorPosition(limitClose, limitOpen, position, runningAction)
+
+	// Update active schedule history entry continuously
+	if n := len(h.scheduleHistory); n > 0 {
+		h.scheduleHistory[n-1].MotorDurationSec = currentDuration
+		if doorPos != "" && doorPos != "unbekannt" {
+			h.scheduleHistory[n-1].EndPosition = doorPos
 		}
+		changed = true
+	}
+
+	if movementDone {
 		h.motorRunningSince = time.Time{}
 		h.motorLimitReachedAt = time.Time{}
-		if n := len(h.scheduleHistory); n > 0 {
-			h.scheduleHistory[n-1].MotorDurationSec = durationSec
-			if doorPos != "" && doorPos != "unbekannt" {
-				h.scheduleHistory[n-1].EndPosition = doorPos
-			} else {
-				h.scheduleHistory[n-1].EndPosition = "stop"
-			}
-			changed = true
-		}
+		h.motorRunningAction = ""
+		log.Printf("[chickendoor-autostop] movement finished (duration=%.1fs, endPosition=%s, timeout=%t)", currentDuration, doorPos, shouldStopByTimeout)
 	}
 	h.mu.Unlock()
 
@@ -659,21 +667,17 @@ func (h *ChickenDoor) autoStopTick() {
 		h.persistState()
 	}
 
-	if !shouldStop {
-		return
+	if shouldStopByTimeout {
+		if err := h.mqttManager.Publish(fmt.Sprintf("%s/engine", nanoSetPrefix), "stop"); err != nil {
+			log.Printf("[chickendoor-autostop] publish stop failed after %ds: %v", timeoutSeconds, err)
+		} else {
+			log.Printf("[chickendoor-autostop] auto-stop sent after %ds", timeoutSeconds)
+		}
+		h.mu.Lock()
+		h.lastStatusAction = "stop"
+		h.mu.Unlock()
+		h.persistState()
 	}
-
-	if err := h.mqttManager.Publish(fmt.Sprintf("%s/engine", nanoSetPrefix), "stop"); err != nil {
-		log.Printf("[chickendoor-autostop] publish stop failed after %ds: %v", timeoutSeconds, err)
-		return
-	}
-
-	log.Printf("[chickendoor-autostop] auto-stop sent after %ds (endPosition=%s, duration=%.1fs)", timeoutSeconds, doorPos, elapsedSec)
-
-	h.mu.Lock()
-	h.lastStatusAction = "stop"
-	h.mu.Unlock()
-	h.persistState()
 }
 
 // @brief Parses a time-of-day string relative to the base day and timezone.
@@ -844,13 +848,22 @@ func (h *ChickenDoor) scheduleSleepUntilNext(reason string) bool {
 			} else {
 				elapsedSec = math.Round(time.Since(h.motorRunningSince).Seconds()*10) / 10
 			}
+			if elapsedSec < 0.1 {
+				elapsedSec = 0.1
+			}
 			h.scheduleHistory[n-1].MotorDurationSec = elapsedSec
+			doorPos := resolveDoorPosition(h.lastStatusLimitClose, h.lastStatusLimitOpen, h.lastStatusPosition, h.motorRunningAction)
+			if doorPos != "" && doorPos != "unbekannt" {
+				h.scheduleHistory[n-1].EndPosition = doorPos
+			}
 			h.motorRunningSince = time.Time{}
+			h.motorRunningAction = ""
 			h.motorLimitReachedAt = time.Time{}
-		}
-		doorPos := resolveDoorPosition(h.lastStatusLimitClose, h.lastStatusLimitOpen, h.lastStatusPosition)
-		if doorPos != "" && doorPos != "unbekannt" {
-			h.scheduleHistory[n-1].EndPosition = doorPos
+		} else {
+			doorPos := resolveDoorPosition(h.lastStatusLimitClose, h.lastStatusLimitOpen, h.lastStatusPosition, h.lastStatusAction)
+			if doorPos != "" && doorPos != "unbekannt" {
+				h.scheduleHistory[n-1].EndPosition = doorPos
+			}
 		}
 	}
 
@@ -883,6 +896,28 @@ func normalizeScheduleAction(action string) string {
 		return "stop"
 	default:
 		return "none"
+	}
+}
+
+// @brief Determines whether a requested schedule movement is already complete.
+//
+// The controller exposes independent end-switch states for the open and closed
+// positions. A schedule action targeting an active corresponding switch is
+// therefore already fulfilled and must not be sent to the motor. Actions such
+// as "stop" and "none" are never considered position-complete because they do
+// not target a specific end position.
+// @param action Normalized or user-facing schedule action such as "open" or "close".
+// @param limitClose Raw close end-switch payload.
+// @param limitOpen Raw open end-switch payload.
+// @return true when the requested target end-switch is active, otherwise false.
+func scheduleActionAlreadyAtTarget(action, limitClose, limitOpen string) bool {
+	switch normalizeScheduleAction(action) {
+	case "open":
+		return isLimitActive(limitOpen)
+	case "close":
+		return isLimitActive(limitClose)
+	default:
+		return false
 	}
 }
 
@@ -947,9 +982,11 @@ func (h *ChickenDoor) executeScheduleAction(action string) {
 	h.mu.Lock()
 	if action == "open" || action == "close" {
 		h.motorRunningSince = time.Now()
+		h.motorRunningAction = action
 		h.motorLimitReachedAt = time.Time{}
 	} else {
 		h.motorRunningSince = time.Time{}
+		h.motorRunningAction = ""
 		h.motorLimitReachedAt = time.Time{}
 	}
 	h.lastStatusAction = action
@@ -1138,11 +1175,23 @@ func (h *ChickenDoor) scheduleTick() {
 		h.mu.Lock()
 		action := h.pendingScheduleAction
 		waitingToSleep := h.scheduleSleepPending
+		actionAlreadyAtTarget := false
 		if !waitingToSleep {
 			if action == "" || action == "none" {
 				action = findMatchingScheduleAction(time.Now(), h.scheduleEntries, 15*time.Minute)
 				log.Printf("[chickendoor-schedule] fallback matching action resolved: '%s'", action)
 			}
+			limitClose := h.lastStatusLimitClose
+			limitOpen := h.lastStatusLimitOpen
+			if messages := h.mqttManager.Messages(); messages != nil {
+				if value := firstValue(messages, "limit_close", "limit/close"); value != nil {
+					limitClose = toString(value)
+				}
+				if value := firstValue(messages, "limit_open", "limit/open"); value != nil {
+					limitOpen = toString(value)
+				}
+			}
+			actionAlreadyAtTarget = scheduleActionAlreadyAtTarget(action, limitClose, limitOpen)
 			h.pendingScheduleAction = ""
 			h.scheduleSleepPending = true
 			h.scheduleWakeAt = time.Now().Add(time.Duration(h.scheduleAwakeSeconds) * time.Second)
@@ -1153,6 +1202,10 @@ func (h *ChickenDoor) scheduleTick() {
 		h.persistState()
 
 		if !waitingToSleep {
+			if actionAlreadyAtTarget {
+				log.Printf("[chickendoor-schedule] action %s already fulfilled by end switch; motor command skipped", action)
+				return
+			}
 			h.executeScheduleAction(action)
 			return
 		}
@@ -1353,7 +1406,7 @@ func (h *ChickenDoor) StatusHandler(w http.ResponseWriter, r *http.Request) {
 	stateTs, hasStateTs := h.firstMessageTimestamp("status", "sleepms/status", "sleepms_status")
 	h.updateStateTracking(controllerState, sleepState, stateTs, hasStateTs)
 
-	doorPos := resolveDoorPosition(limitClose, limitOpen, position)
+	doorPos := resolveDoorPosition(limitClose, limitOpen, position, h.lastStatusAction)
 
 	h.mu.Lock()
 	// Persist the latest non-empty status values so the next UI load can fall
@@ -1571,6 +1624,7 @@ func (h *ChickenDoor) SetHandler(w http.ResponseWriter, r *http.Request) {
 		h.mu.Lock()
 		if command == "open" || command == "close" {
 			h.motorRunningSince = time.Now()
+			h.motorRunningAction = command
 			h.motorLimitReachedAt = time.Time{}
 		} else if command == "stop" {
 			if !h.motorRunningSince.IsZero() {
@@ -1580,13 +1634,17 @@ func (h *ChickenDoor) SetHandler(w http.ResponseWriter, r *http.Request) {
 				} else {
 					elapsedSec = math.Round(time.Since(h.motorRunningSince).Seconds()*10) / 10
 				}
+				if elapsedSec < 0.1 {
+					elapsedSec = 0.1
+				}
 				if n := len(h.scheduleHistory); n > 0 {
 					h.scheduleHistory[n-1].MotorDurationSec = elapsedSec
-					doorPos := resolveDoorPosition(h.lastStatusLimitClose, h.lastStatusLimitOpen, "stop")
+					doorPos := resolveDoorPosition(h.lastStatusLimitClose, h.lastStatusLimitOpen, "stop", "stop")
 					h.scheduleHistory[n-1].EndPosition = doorPos
 				}
 			}
 			h.motorRunningSince = time.Time{}
+			h.motorRunningAction = ""
 			h.motorLimitReachedAt = time.Time{}
 		}
 		h.mu.Unlock()
