@@ -839,7 +839,15 @@ func (h *ChickenDoor) scheduleSleepUntilNext(reason string) bool {
 	}
 
 	h.mu.Lock()
-	// Finalize previous schedule history entry before appending a new one.
+	// The motor action belongs to the newly created current schedule row. The
+	// controller wakes from the previous row, performs the action, and only then
+	// publishes the next sleep command. Capture the completed movement here so
+	// its result can be written into that new current row instead of remaining
+	// attached to the row that described the wake-up.
+	var currentEndPosition string
+	var currentMotorDuration float64
+
+	// Finalize the movement values before appending the new current row.
 	if n := len(h.scheduleHistory); n > 0 {
 		if !h.motorRunningSince.IsZero() {
 			var elapsedSec float64
@@ -851,10 +859,10 @@ func (h *ChickenDoor) scheduleSleepUntilNext(reason string) bool {
 			if elapsedSec < 0.1 {
 				elapsedSec = 0.1
 			}
-			h.scheduleHistory[n-1].MotorDurationSec = elapsedSec
+			currentMotorDuration = elapsedSec
 			doorPos := resolveDoorPosition(h.lastStatusLimitClose, h.lastStatusLimitOpen, h.lastStatusPosition, h.motorRunningAction)
 			if doorPos != "" && doorPos != "unbekannt" {
-				h.scheduleHistory[n-1].EndPosition = doorPos
+				currentEndPosition = doorPos
 			}
 			h.motorRunningSince = time.Time{}
 			h.motorRunningAction = ""
@@ -862,7 +870,7 @@ func (h *ChickenDoor) scheduleSleepUntilNext(reason string) bool {
 		} else {
 			doorPos := resolveDoorPosition(h.lastStatusLimitClose, h.lastStatusLimitOpen, h.lastStatusPosition, h.lastStatusAction)
 			if doorPos != "" && doorPos != "unbekannt" {
-				h.scheduleHistory[n-1].EndPosition = doorPos
+				currentEndPosition = doorPos
 			}
 		}
 	}
@@ -875,6 +883,8 @@ func (h *ChickenDoor) scheduleSleepUntilNext(reason string) bool {
 		SleepSeconds:     sleepSeconds,
 		BatteryPercent:   batteryPercent,
 		SleepCommandAtMs: nowTs.UnixMilli(),
+		EndPosition:      currentEndPosition,
+		MotorDurationSec: currentMotorDuration,
 	})
 	if len(h.scheduleHistory) > scheduleHistorySize {
 		h.scheduleHistory = h.scheduleHistory[len(h.scheduleHistory)-scheduleHistorySize:]
