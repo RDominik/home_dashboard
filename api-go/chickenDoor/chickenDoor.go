@@ -195,6 +195,12 @@ type ChickenDoor struct {
 	motorRunningAction string
 	// motorLimitReachedAt stores the timestamp when a limit switch became active during movement.
 	motorLimitReachedAt time.Time
+	// completedMotorDuration stores the last completed motor run until the next
+	// schedule history row is created. This prevents a finished run from being
+	// written into the previous sleep row while the new row does not exist yet.
+	completedMotorDuration float64
+	// completedMotorPosition stores the end position paired with the completed run.
+	completedMotorPosition string
 
 	lastStatusPosition   string
 	lastStatusAction     string
@@ -554,25 +560,10 @@ func (h *ChickenDoor) autoStopTick() {
 	h.motorAutoStopSeconds = timeoutSeconds
 
 	now := time.Now()
-	changed := false
-
 	// Case 1: Motor is not recorded as running yet.
 	if h.motorRunningSince.IsZero() {
 		if !runningFromMqtt {
-			doorPos := resolveDoorPosition(limitClose, limitOpen, position, h.lastStatusAction)
-			// Keep the resolved end position synchronized in the active history entry.
-			if doorPos != "" && doorPos != "unbekannt" {
-				if n := len(h.scheduleHistory); n > 0 && h.scheduleHistory[n-1].WokeUpAtMs > 0 {
-					if h.scheduleHistory[n-1].EndPosition != doorPos {
-						h.scheduleHistory[n-1].EndPosition = doorPos
-						changed = true
-					}
-				}
-			}
 			h.mu.Unlock()
-			if changed {
-				h.persistState()
-			}
 			return
 		}
 		// Motor was reported running via MQTT unsolicited.
@@ -646,26 +637,20 @@ func (h *ChickenDoor) autoStopTick() {
 
 	doorPos := resolveDoorPosition(limitClose, limitOpen, position, runningAction)
 
-	// Update active schedule history entry continuously
-	if n := len(h.scheduleHistory); n > 0 {
-		h.scheduleHistory[n-1].MotorDurationSec = currentDuration
-		if doorPos != "" && doorPos != "unbekannt" {
-			h.scheduleHistory[n-1].EndPosition = doorPos
-		}
-		changed = true
-	}
-
 	if movementDone {
+		// Hold the completed result until scheduleSleepUntilNext creates the new
+		// row. The previous row describes the wake-up that started this action and
+		// must remain unchanged.
+		h.completedMotorDuration = currentDuration
+		if doorPos != "" && doorPos != "unbekannt" {
+			h.completedMotorPosition = doorPos
+		}
 		h.motorRunningSince = time.Time{}
 		h.motorLimitReachedAt = time.Time{}
 		h.motorRunningAction = ""
 		log.Printf("[chickendoor-autostop] movement finished (duration=%.1fs, endPosition=%s, timeout=%t)", currentDuration, doorPos, shouldStopByTimeout)
 	}
 	h.mu.Unlock()
-
-	if changed {
-		h.persistState()
-	}
 
 	if shouldStopByTimeout {
 		if err := h.mqttManager.Publish(fmt.Sprintf("%s/engine", nanoSetPrefix), "stop"); err != nil {
@@ -841,39 +826,31 @@ func (h *ChickenDoor) scheduleSleepUntilNext(reason string) bool {
 	h.mu.Lock()
 	// The motor action belongs to the newly created current schedule row. The
 	// controller wakes from the previous row, performs the action, and only then
-	// publishes the next sleep command. Capture the completed movement here so
-	// its result can be written into that new current row instead of remaining
-	// attached to the row that described the wake-up.
-	var currentEndPosition string
-	var currentMotorDuration float64
+	// publishes the next sleep command. Read the completed result captured by
+	// autoStopTick so it is written only into this new row.
+	currentEndPosition := h.completedMotorPosition
+	currentMotorDuration := h.completedMotorDuration
 
 	// Finalize the movement values before appending the new current row.
-	if n := len(h.scheduleHistory); n > 0 {
-		if !h.motorRunningSince.IsZero() {
-			var elapsedSec float64
-			if !h.motorLimitReachedAt.IsZero() {
-				elapsedSec = math.Round(h.motorLimitReachedAt.Sub(h.motorRunningSince).Seconds()*10) / 10
-			} else {
-				elapsedSec = math.Round(time.Since(h.motorRunningSince).Seconds()*10) / 10
-			}
-			if elapsedSec < 0.1 {
-				elapsedSec = 0.1
-			}
-			currentMotorDuration = elapsedSec
-			doorPos := resolveDoorPosition(h.lastStatusLimitClose, h.lastStatusLimitOpen, h.lastStatusPosition, h.motorRunningAction)
-			if doorPos != "" && doorPos != "unbekannt" {
-				currentEndPosition = doorPos
-			}
-			h.motorRunningSince = time.Time{}
-			h.motorRunningAction = ""
-			h.motorLimitReachedAt = time.Time{}
+	if !h.motorRunningSince.IsZero() {
+		var elapsedSec float64
+		if !h.motorLimitReachedAt.IsZero() {
+			elapsedSec = math.Round(h.motorLimitReachedAt.Sub(h.motorRunningSince).Seconds()*10) / 10
 		} else {
-			doorPos := resolveDoorPosition(h.lastStatusLimitClose, h.lastStatusLimitOpen, h.lastStatusPosition, h.lastStatusAction)
-			if doorPos != "" && doorPos != "unbekannt" {
-				currentEndPosition = doorPos
-			}
+			elapsedSec = math.Round(time.Since(h.motorRunningSince).Seconds()*10) / 10
+		}
+		if elapsedSec < 0.1 {
+			elapsedSec = 0.1
+		}
+		currentMotorDuration = elapsedSec
+		doorPos := resolveDoorPosition(h.lastStatusLimitClose, h.lastStatusLimitOpen, h.lastStatusPosition, h.motorRunningAction)
+		if doorPos != "" && doorPos != "unbekannt" {
+			currentEndPosition = doorPos
 		}
 	}
+	h.motorRunningSince = time.Time{}
+	h.motorRunningAction = ""
+	h.motorLimitReachedAt = time.Time{}
 
 	h.pendingScheduleAction = normalizeScheduleAction(nextEntry.Action)
 	h.scheduleSleepPending = false
@@ -886,6 +863,8 @@ func (h *ChickenDoor) scheduleSleepUntilNext(reason string) bool {
 		EndPosition:      currentEndPosition,
 		MotorDurationSec: currentMotorDuration,
 	})
+	h.completedMotorDuration = 0
+	h.completedMotorPosition = ""
 	if len(h.scheduleHistory) > scheduleHistorySize {
 		h.scheduleHistory = h.scheduleHistory[len(h.scheduleHistory)-scheduleHistorySize:]
 	}
@@ -1437,14 +1416,6 @@ func (h *ChickenDoor) StatusHandler(w http.ResponseWriter, r *http.Request) {
 			h.lastStatusLimitOpen = limitOpen
 		}
 
-		// Keep active history entry end position synchronized if motor has finished moving
-		if !isMotorRunningPosition(position) {
-			if doorPos != "" && doorPos != "unbekannt" {
-				if n := len(h.scheduleHistory); n > 0 && h.scheduleHistory[n-1].WokeUpAtMs > 0 {
-					h.scheduleHistory[n-1].EndPosition = doorPos
-				}
-			}
-		}
 	}
 	historyCopy := append([]ScheduleHistoryEntry(nil), h.scheduleHistory...)
 
@@ -1647,10 +1618,10 @@ func (h *ChickenDoor) SetHandler(w http.ResponseWriter, r *http.Request) {
 				if elapsedSec < 0.1 {
 					elapsedSec = 0.1
 				}
-				if n := len(h.scheduleHistory); n > 0 {
-					h.scheduleHistory[n-1].MotorDurationSec = elapsedSec
-					doorPos := resolveDoorPosition(h.lastStatusLimitClose, h.lastStatusLimitOpen, "stop", "stop")
-					h.scheduleHistory[n-1].EndPosition = doorPos
+				h.completedMotorDuration = elapsedSec
+				doorPos := resolveDoorPosition(h.lastStatusLimitClose, h.lastStatusLimitOpen, "stop", "stop")
+				if doorPos != "" && doorPos != "unbekannt" {
+					h.completedMotorPosition = doorPos
 				}
 			}
 			h.motorRunningSince = time.Time{}
