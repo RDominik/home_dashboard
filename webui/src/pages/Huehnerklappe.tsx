@@ -608,6 +608,8 @@ export default function Huehnerklappe() {
         )}
       </div>
 
+      <ChickenDoorGraphic status={status} />
+
       {/* Steuerung */}
       <div style={{ ...cardStyle }}>
         <h3 style={{ marginTop: 0, color: '#374151' }}>🔧 Klappe steuern</h3>
@@ -980,6 +982,95 @@ function StatusItem({ label, value }: StatusItemProps) {
     }}>
       <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>{label}</div>
       <div style={{ fontSize: 18, fontWeight: 700, color: '#111827' }}>{value}</div>
+    </div>
+  )
+}
+
+type ChickenDoorGraphicProps = {
+  status: HuehnerklappeStatus | null
+}
+
+function ChickenDoorGraphic({ status }: ChickenDoorGraphicProps) {
+  const [visualOpen, setVisualOpen] = useState(false)
+
+  const history = Array.isArray(status?.scheduleHistory) ? status.scheduleHistory : []
+  const normalizedAction = String(status?.lastAction ?? '').toLowerCase().trim()
+  const normalizedPosition = String(status?.position ?? '').toLowerCase().trim()
+  const positionIsOpen = normalizedPosition.includes('open') || normalizedPosition.includes('offen') || normalizedPosition.includes('auf')
+  const positionIsClosed = normalizedPosition.includes('close') || normalizedPosition.includes('geschlossen') || normalizedPosition.includes('zu')
+  const actionIsOpen = normalizedAction.includes('open') || normalizedAction.includes('offen') || normalizedAction.includes('auf')
+  const actionIsClosed = normalizedAction.includes('close') || normalizedAction.includes('geschlossen') || normalizedAction.includes('zu')
+  const targetOpen = positionIsOpen || (!positionIsClosed && actionIsOpen && !actionIsClosed)
+  const frameColor = positionIsClosed ? '#dc2626' : positionIsOpen ? '#16a34a' : '#111827'
+
+  const targetPosition = targetOpen ? 'open' : 'closed'
+  const matchingEntry = [...history].reverse().find((entry) => {
+    const position = String(entry.endPosition ?? '').toLowerCase()
+    const matchesTarget = targetOpen
+      ? position.includes('open') || position.includes('offen') || position.includes('auf')
+      : position.includes('close') || position.includes('geschlossen') || position.includes('zu')
+    return matchesTarget && typeof entry.motorDurationSec === 'number' && entry.motorDurationSec > 0
+  })
+  const animationDuration = Math.max(0.2, matchingEntry?.motorDurationSec ?? 1)
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => setVisualOpen(targetOpen))
+    return () => window.cancelAnimationFrame(frame)
+  }, [targetPosition])
+
+  return (
+    <div style={{
+      background: '#fff',
+      borderRadius: 10,
+      padding: '20px 24px',
+      marginBottom: 16,
+      boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
+    }}>
+      <h3 style={{ marginTop: 0, color: '#374151' }}>🐔 Klappenansicht</h3>
+      <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 0 14px' }}>
+        <div style={{
+          position: 'relative',
+          width: 'min(100%, 280px)',
+          height: 250,
+          background: '#f3f4f6',
+          border: `3px solid ${frameColor}`,
+          overflow: 'visible',
+          boxSizing: 'border-box',
+        }}>
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            bottom: 0,
+            left: 18,
+            width: 6,
+            background: '#fff',
+            border: '2px solid #111827',
+            boxSizing: 'border-box',
+          }} />
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            bottom: 0,
+            right: 18,
+            width: 6,
+            background: '#fff',
+            border: '2px solid #111827',
+            boxSizing: 'border-box',
+          }} />
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            left: 24,
+            width: 'calc(100% - 48px)',
+            height: '100%',
+            background: '#fff',
+            border: '2px solid #111827',
+            boxSizing: 'border-box',
+            transform: visualOpen ? 'translateX(100%)' : 'translateX(0)',
+            transition: `transform ${animationDuration}s ease-in-out`,
+          }} />
+        </div>
+      </div>
     </div>
   )
 }
