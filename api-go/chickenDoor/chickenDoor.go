@@ -540,8 +540,8 @@ func resolveDoorPosition(limitClose, limitOpen, engineStatus, lastAction string)
 func (h *ChickenDoor) autoStopTick() {
 	msgs := h.mqttManager.Messages()
 	position := toString(msgs["engine_status"])
-	limitClose := toString(firstValue(msgs, "limit_close", "limit/close"))
-	limitOpen := toString(firstValue(msgs, "limit_open", "limit/open"))
+	limitClose := toString(h.latestMessageValue(msgs, "limit_close", "limit/close"))
+	limitOpen := toString(h.latestMessageValue(msgs, "limit_open", "limit/open"))
 	runningFromMqtt := isMotorRunningPosition(position)
 
 	h.mu.Lock()
@@ -1173,10 +1173,10 @@ func (h *ChickenDoor) scheduleTick() {
 			limitClose := h.lastStatusLimitClose
 			limitOpen := h.lastStatusLimitOpen
 			if messages := h.mqttManager.Messages(); messages != nil {
-				if value := firstValue(messages, "limit_close", "limit/close"); value != nil {
+				if value := h.latestMessageValue(messages, "limit_close", "limit/close"); value != nil {
 					limitClose = toString(value)
 				}
-				if value := firstValue(messages, "limit_open", "limit/open"); value != nil {
+				if value := h.latestMessageValue(messages, "limit_open", "limit/open"); value != nil {
 					limitOpen = toString(value)
 				}
 			}
@@ -1207,6 +1207,34 @@ func (h *ChickenDoor) scheduleTick() {
 			log.Printf("[chickendoor-schedule] retry armed in %s", scheduleRetryDelay)
 		}
 	}
+}
+
+// @brief Returns the most recently received value for any of the given MQTT key aliases.
+//
+// Different MQTT configurations can expose the same end switch as either a
+// flattened key such as "limit_close" or a slash-style key such as
+// "limit/close". Selecting by receive timestamp prevents an older alias from
+// hiding a newer ACTIVE or released state.
+// @param msgs Snapshot of MQTT values.
+// @param keys Equivalent MQTT key aliases.
+// @return Value belonging to the newest received alias, or nil when none exists.
+func (h *ChickenDoor) latestMessageValue(msgs map[string]any, keys ...string) any {
+	var latestValue any
+	var latestAt time.Time
+	for _, key := range keys {
+		value, receivedAt, ok := h.mqttManager.MessageWithTimestamp(key)
+		if !ok {
+			continue
+		}
+		if latestAt.IsZero() || receivedAt.After(latestAt) {
+			latestValue = value
+			latestAt = receivedAt
+		}
+	}
+	if latestAt.IsZero() {
+		return firstValue(msgs, keys...)
+	}
+	return latestValue
 }
 
 // @brief Robustly converts arbitrary values to string representation.
@@ -1351,8 +1379,8 @@ func (h *ChickenDoor) StatusHandler(w http.ResponseWriter, r *http.Request) {
 	wakeReason := toString(firstValue(msgs, "sleepms/wakeup_reason", "sleepms_wakeup_reason"))
 	ip := toString(msgs["ip"])
 	charging := toString(msgs["battery_charging"])
-	limitClose := toString(firstValue(msgs, "limit_close", "limit/close"))
-	limitOpen := toString(firstValue(msgs, "limit_open", "limit/open"))
+	limitClose := toString(h.latestMessageValue(msgs, "limit_close", "limit/close"))
+	limitOpen := toString(h.latestMessageValue(msgs, "limit_open", "limit/open"))
 	battery := ""
 	if value, ok := msgs["battery_percent"]; ok && value != nil {
 		battery = fmt.Sprintf("%v", value)
@@ -1360,6 +1388,10 @@ func (h *ChickenDoor) StatusHandler(w http.ResponseWriter, r *http.Request) {
 	position := toString(msgs["engine_status"])
 	if position == "" {
 		position = "unbekannt"
+	}
+	engineAction := toString(msgs["engine_set"])
+	if strings.TrimSpace(engineAction) == "" {
+		engineAction = toString(msgs["engine"])
 	}
 
 	h.mu.Lock()
@@ -1402,7 +1434,7 @@ func (h *ChickenDoor) StatusHandler(w http.ResponseWriter, r *http.Request) {
 	// back to them if MQTT is still empty.
 	if toString(msgs["status"]) != "" || sleepState != "" || wakeReason != "" || ip != "" || charging != "" || battery != "" || position != "" || limitClose != "" || limitOpen != "" {
 		h.lastStatusPosition = position
-		h.lastStatusAction = toString(msgs["engine_set"])
+		h.lastStatusAction = engineAction
 		h.lastStatusBattery = battery
 		h.lastStatusWakeReason = wakeReason
 		h.lastStatusController = controllerState
@@ -1426,7 +1458,7 @@ func (h *ChickenDoor) StatusHandler(w http.ResponseWriter, r *http.Request) {
 
 	status := StatusResponse{
 		Position:         displayPosition,
-		LastAction:       toString(msgs["engine_set"]),
+		LastAction:       engineAction,
 		Battery:          battery,
 		WakeReason:       wakeReason,
 		ControllerState:  controllerState,
