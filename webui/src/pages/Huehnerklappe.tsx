@@ -1059,14 +1059,14 @@ function ChickenDoorGraphic({ status }: ChickenDoorGraphicProps) {
           }} />
           <div style={{
             position: 'absolute',
-            top: 0,
+            bottom: 0,
             left: 24,
             width: 'calc(100% - 48px)',
             height: '100%',
             background: '#fff',
             border: '2px solid #111827',
             boxSizing: 'border-box',
-            transform: visualOpen ? 'translateX(100%)' : 'translateX(0)',
+            transform: visualOpen ? 'translateY(-100%)' : 'translateY(0)',
             transition: `transform ${animationDuration}s ease-in-out`,
           }} />
         </div>
