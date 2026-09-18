@@ -1038,16 +1038,21 @@ function ChickenDoorGraphic({ status }: ChickenDoorGraphicProps) {
       padding: '20px 24px',
       marginBottom: 16,
       boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
+      overflow: 'hidden',
+      position: 'relative',
+      isolation: 'isolate',
     }}>
       <h3 style={{ marginTop: 0, color: '#374151' }}>🐔 Klappenansicht</h3>
       <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 0 14px' }}>
         <div style={{
           position: 'relative',
           width: 'min(100%, 280px)',
-          height: 250,
+          height: 'auto',
+          aspectRatio: '1 / 1',
           background: '#f3f4f6',
           border: `3px solid ${frameColor}`,
           overflow: 'hidden',
+          clipPath: 'inset(0)',
           boxSizing: 'border-box',
         }}>
           <div style={{

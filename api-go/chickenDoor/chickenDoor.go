@@ -1432,10 +1432,26 @@ func (h *ChickenDoor) StatusHandler(w http.ResponseWriter, r *http.Request) {
 	doorPos := resolveDoorPosition(limitClose, limitOpen, position, engineAction)
 
 	h.mu.Lock()
+	// A controller restart can temporarily report both switches as released
+	// while the door is not moving. Preserve the last persisted final position
+	// instead of replacing it with a transient "Zwischenposition" value.
+	if doorPos == "Zwischenposition" && !isMotorRunningPosition(position) {
+		persistedPosition := strings.ToLower(strings.TrimSpace(h.lastStatusPosition))
+		if persistedPosition == "offen" || persistedPosition == "open" || persistedPosition == "auf" {
+			doorPos = "offen"
+		} else if persistedPosition == "geschlossen" || persistedPosition == "closed" || persistedPosition == "close" || persistedPosition == "zu" {
+			doorPos = "geschlossen"
+		}
+	}
+
 	// Persist the latest non-empty status values so the next UI load can fall
 	// back to them if MQTT is still empty.
 	if toString(msgs["status"]) != "" || sleepState != "" || wakeReason != "" || ip != "" || charging != "" || battery != "" || position != "" || limitClose != "" || limitOpen != "" {
-		h.lastStatusPosition = position
+		if doorPos != "Zwischenposition" && doorPos != "in Bewegung" && doorPos != "unbekannt" {
+			h.lastStatusPosition = doorPos
+		} else {
+			h.lastStatusPosition = position
+		}
 		h.lastStatusAction = engineAction
 		h.lastStatusBattery = battery
 		h.lastStatusWakeReason = wakeReason
