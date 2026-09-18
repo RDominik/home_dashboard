@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 const API = '/api/huehnerklappe'
 
@@ -991,16 +991,22 @@ type ChickenDoorGraphicProps = {
 }
 
 function ChickenDoorGraphic({ status }: ChickenDoorGraphicProps) {
-  const [visualOpen, setVisualOpen] = useState(false)
-
   const history = Array.isArray(status?.scheduleHistory) ? status.scheduleHistory : []
   const normalizedAction = String(status?.lastAction ?? '').toLowerCase().trim()
   const normalizedPosition = String(status?.position ?? '').toLowerCase().trim()
-  const positionIsOpen = normalizedPosition.includes('open') || normalizedPosition.includes('offen') || normalizedPosition.includes('auf')
-  const positionIsClosed = normalizedPosition.includes('close') || normalizedPosition.includes('geschlossen') || normalizedPosition.includes('zu')
+  const normalizedLimitOpen = String(status?.limitOpen ?? '').toLowerCase().trim()
+  const normalizedLimitClose = String(status?.limitClose ?? '').toLowerCase().trim()
+  const openLimitActive = ['active', '1', 'true', 'high', 'pressed', 'closed'].includes(normalizedLimitOpen)
+  const closeLimitActive = ['active', '1', 'true', 'high', 'pressed', 'closed'].includes(normalizedLimitClose)
+  const positionIsOpen = openLimitActive || (!closeLimitActive && (normalizedPosition.includes('open') || normalizedPosition.includes('offen') || normalizedPosition.includes('auf')))
+  const positionIsClosed = closeLimitActive || (!openLimitActive && (normalizedPosition.includes('close') || normalizedPosition.includes('geschlossen') || normalizedPosition.includes('zu')))
   const actionIsOpen = normalizedAction.includes('open') || normalizedAction.includes('offen') || normalizedAction.includes('auf')
   const actionIsClosed = normalizedAction.includes('close') || normalizedAction.includes('geschlossen') || normalizedAction.includes('zu')
   const targetOpen = positionIsOpen || (!positionIsClosed && actionIsOpen && !actionIsClosed)
+  const motorIsMoving = normalizedPosition.includes('bewegung') || normalizedPosition.includes('moving') || normalizedPosition.includes('opening') || normalizedPosition.includes('closing') || normalizedPosition.includes('fahrt') || normalizedPosition.includes('laeuft')
+  const movementTargetOpen = actionIsOpen && !actionIsClosed
+  const [visualOpen, setVisualOpen] = useState(targetOpen)
+  const hasRendered = useRef(false)
   const frameColor = positionIsClosed ? '#dc2626' : positionIsOpen ? '#16a34a' : '#111827'
 
   const targetPosition = targetOpen ? 'open' : 'closed'
@@ -1014,9 +1020,16 @@ function ChickenDoorGraphic({ status }: ChickenDoorGraphicProps) {
   const animationDuration = Math.max(0.2, matchingEntry?.motorDurationSec ?? 1)
 
   useEffect(() => {
-    const frame = window.requestAnimationFrame(() => setVisualOpen(targetOpen))
-    return () => window.cancelAnimationFrame(frame)
-  }, [targetPosition])
+    if (!hasRendered.current) {
+      hasRendered.current = true
+      return
+    }
+    if (motorIsMoving) {
+      setVisualOpen(movementTargetOpen)
+    } else {
+      setVisualOpen(targetOpen)
+    }
+  }, [motorIsMoving, movementTargetOpen, targetOpen, targetPosition])
 
   return (
     <div style={{
@@ -1034,7 +1047,7 @@ function ChickenDoorGraphic({ status }: ChickenDoorGraphicProps) {
           height: 250,
           background: '#f3f4f6',
           border: `3px solid ${frameColor}`,
-          overflow: 'visible',
+          overflow: 'hidden',
           boxSizing: 'border-box',
         }}>
           <div style={{
@@ -1067,7 +1080,7 @@ function ChickenDoorGraphic({ status }: ChickenDoorGraphicProps) {
             border: '2px solid #111827',
             boxSizing: 'border-box',
             transform: visualOpen ? 'translateY(-100%)' : 'translateY(0)',
-            transition: `transform ${animationDuration}s ease-in-out`,
+            transition: motorIsMoving ? `transform ${animationDuration}s ease-in-out` : 'none',
           }} />
         </div>
       </div>

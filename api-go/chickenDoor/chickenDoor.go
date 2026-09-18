@@ -1427,7 +1427,9 @@ func (h *ChickenDoor) StatusHandler(w http.ResponseWriter, r *http.Request) {
 	stateTs, hasStateTs := h.firstMessageTimestamp("status", "sleepms/status", "sleepms_status")
 	h.updateStateTracking(controllerState, sleepState, stateTs, hasStateTs)
 
-	doorPos := resolveDoorPosition(limitClose, limitOpen, position, h.lastStatusAction)
+	// End switches are authoritative for a final position. The current engine
+	// action is only a fallback while the door is moving or between positions.
+	doorPos := resolveDoorPosition(limitClose, limitOpen, position, engineAction)
 
 	h.mu.Lock()
 	// Persist the latest non-empty status values so the next UI load can fall
