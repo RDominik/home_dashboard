@@ -317,6 +317,15 @@ func (h *ChickenDoor) executeScheduleAction(action string) {
 	if action == "none" {
 		return
 	}
+	if action == "open" || action == "close" {
+		h.mu.Lock()
+		runtimeSeconds := h.motorAutoStopSeconds
+		h.mu.Unlock()
+		if err := h.publishMotorRuntime(runtimeSeconds); err != nil {
+			log.Printf("[chickendoor-schedule] runtime publish failed before action %s: %v", action, err)
+			return
+		}
+	}
 	if err := h.mqttManager.Publish(fmt.Sprintf("%s/engine", nanoSetPrefix), action); err != nil {
 		log.Printf("[chickendoor-schedule] action %s failed: %v", action, err)
 		return

@@ -19,6 +19,7 @@ import (
 )
 
 const nanoSetPrefix = "nano/esp32"
+const motorRuntimeTopic = nanoSetPrefix + "/runtime"
 const stateDBPathDefault = "data/chickendoor.db"
 const stateBucketName = "chickendoor"
 const stateKey = "state"
@@ -189,6 +190,19 @@ func clampMotorAutoStopSeconds(seconds int) int {
 		return 60
 	}
 	return seconds
+}
+
+// @brief Publishes the configured motor runtime to the controller.
+//
+// The backend still enforces the same timeout locally, but the controller also
+// receives the value so both sides use the configured runtime when a movement
+// command is started. The payload is expressed in seconds to match the UI and
+// the persisted motorAutoStopSeconds setting.
+// @param seconds Requested motor runtime in seconds.
+// @return An error when the MQTT publish cannot be completed.
+func (h *ChickenDoor) publishMotorRuntime(seconds int) error {
+	seconds = clampMotorAutoStopSeconds(seconds)
+	return h.mqttManager.Publish(motorRuntimeTopic, seconds)
 }
 
 // @brief Opens/creates the local bbolt state database.
@@ -384,13 +398,15 @@ func isMotorRunningPosition(position string) bool {
 
 // @brief Returns true if limit switch payload indicates the switch is pressed/active.
 //
-// Checks for typical active state keywords such as "active", "1", "true", "high",
-// "pressed", or "closed".
+// Checks for typical active state keywords such as "active", "on", "1", "true",
+// "high", "pressed", "triggered", or "closed". The comparison is deliberately
+// case-insensitive because MQTT payload casing depends on the controller firmware.
 // @param val Raw limit switch payload string.
 // @return true if the limit switch is active, otherwise false.
 func isLimitActive(val string) bool {
 	v := strings.ToLower(strings.TrimSpace(val))
-	return v == "active" || v == "1" || v == "true" || v == "high" || v == "pressed" || v == "closed"
+	return v == "active" || v == "on" || v == "1" || v == "true" || v == "high" ||
+		v == "pressed" || v == "triggered" || v == "closed"
 }
 
 // @brief Resolves semantic door position ("geschlossen", "offen", "in Bewegung", etc.)

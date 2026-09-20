@@ -49,6 +49,16 @@ func (h *ChickenDoor) SetHandler(w http.ResponseWriter, r *http.Request) {
 	topic := fmt.Sprintf("%s/%s/set", nanoSetPrefix, req.Key)
 	if req.Key == "engine" {
 		topic = fmt.Sprintf("%s/engine", nanoSetPrefix)
+		command := strings.ToLower(strings.TrimSpace(toString(req.Value)))
+		if command == "open" || command == "close" {
+			h.mu.Lock()
+			runtimeSeconds := h.motorAutoStopSeconds
+			h.mu.Unlock()
+			if err := h.publishMotorRuntime(runtimeSeconds); err != nil {
+				jsonResponse(w, map[string]any{"ok": false, "error": err.Error()})
+				return
+			}
+		}
 	}
 	payload := req.Value
 	if req.Key == "engine/sleep" {

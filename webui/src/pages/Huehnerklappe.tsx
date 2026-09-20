@@ -995,8 +995,9 @@ function ChickenDoorGraphic({ status }: ChickenDoorGraphicProps) {
   const normalizedAction = String(status?.lastAction ?? '').toLowerCase().trim()
   const normalizedLimitOpen = String(status?.limitOpen ?? '').toLowerCase().trim()
   const normalizedLimitClose = String(status?.limitClose ?? '').toLowerCase().trim()
-  const openLimitActive = ['active', '1', 'true', 'high', 'pressed', 'closed'].includes(normalizedLimitOpen)
-  const closeLimitActive = ['active', '1', 'true', 'high', 'pressed', 'closed'].includes(normalizedLimitClose)
+  const activeLimitValues = ['active', 'on', '1', 'true', 'high', 'pressed', 'triggered', 'closed']
+  const openLimitActive = activeLimitValues.includes(normalizedLimitOpen)
+  const closeLimitActive = activeLimitValues.includes(normalizedLimitClose)
   const actionIsOpen = normalizedAction.includes('open') || normalizedAction.includes('offen') || normalizedAction.includes('auf')
   const actionIsClosed = normalizedAction.includes('close') || normalizedAction.includes('geschlossen') || normalizedAction.includes('zu')
   const targetOpen = openLimitActive && !closeLimitActive
