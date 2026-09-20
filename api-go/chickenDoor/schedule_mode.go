@@ -484,7 +484,17 @@ func (h *ChickenDoor) scheduleTick() {
 		actionAlreadyAtTarget = scheduleActionAlreadyAtTarget(action, limitClose, limitOpen)
 		h.pendingScheduleAction = ""
 		h.scheduleSleepPending = true
-		h.scheduleWakeAt = time.Now().Add(time.Duration(h.scheduleAwakeSeconds) * time.Second)
+		awakeSeconds := h.scheduleAwakeSeconds
+		// A scheduled motor movement must not be cut short by the general
+		// awake window. Keep the controller awake for at least the configured
+		// motor runtime so a value such as 25 seconds is actually available.
+		if action != "none" && !actionAlreadyAtTarget {
+			runtimeSeconds := clampMotorAutoStopSeconds(h.motorAutoStopSeconds)
+			if awakeSeconds < runtimeSeconds {
+				awakeSeconds = runtimeSeconds
+			}
+		}
+		h.scheduleWakeAt = time.Now().Add(time.Duration(awakeSeconds) * time.Second)
 	} else {
 		h.scheduleSleepPending = false
 	}
