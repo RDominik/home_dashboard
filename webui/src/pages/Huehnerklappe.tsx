@@ -993,21 +993,18 @@ type ChickenDoorGraphicProps = {
 function ChickenDoorGraphic({ status }: ChickenDoorGraphicProps) {
   const history = Array.isArray(status?.scheduleHistory) ? status.scheduleHistory : []
   const normalizedAction = String(status?.lastAction ?? '').toLowerCase().trim()
-  const normalizedPosition = String(status?.position ?? '').toLowerCase().trim()
   const normalizedLimitOpen = String(status?.limitOpen ?? '').toLowerCase().trim()
   const normalizedLimitClose = String(status?.limitClose ?? '').toLowerCase().trim()
   const openLimitActive = ['active', '1', 'true', 'high', 'pressed', 'closed'].includes(normalizedLimitOpen)
   const closeLimitActive = ['active', '1', 'true', 'high', 'pressed', 'closed'].includes(normalizedLimitClose)
-  const positionIsOpen = openLimitActive || (!closeLimitActive && (normalizedPosition.includes('open') || normalizedPosition.includes('offen') || normalizedPosition.includes('auf')))
-  const positionIsClosed = closeLimitActive || (!openLimitActive && (normalizedPosition.includes('close') || normalizedPosition.includes('geschlossen') || normalizedPosition.includes('zu')))
   const actionIsOpen = normalizedAction.includes('open') || normalizedAction.includes('offen') || normalizedAction.includes('auf')
   const actionIsClosed = normalizedAction.includes('close') || normalizedAction.includes('geschlossen') || normalizedAction.includes('zu')
-  const targetOpen = positionIsOpen || (!positionIsClosed && actionIsOpen && !actionIsClosed)
-  const motorIsMoving = normalizedPosition.includes('bewegung') || normalizedPosition.includes('moving') || normalizedPosition.includes('opening') || normalizedPosition.includes('closing') || normalizedPosition.includes('fahrt') || normalizedPosition.includes('laeuft')
+  const targetOpen = openLimitActive && !closeLimitActive
+  const motorIsMoving = normalizedAction.includes('open') || normalizedAction.includes('close') || normalizedAction.includes('oeffnen') || normalizedAction.includes('schliessen')
   const movementTargetOpen = actionIsOpen && !actionIsClosed
   const [visualOpen, setVisualOpen] = useState(targetOpen)
   const hasRendered = useRef(false)
-  const frameColor = positionIsClosed ? '#dc2626' : positionIsOpen ? '#16a34a' : '#111827'
+  const frameColor = closeLimitActive && !openLimitActive ? '#dc2626' : openLimitActive && !closeLimitActive ? '#16a34a' : '#111827'
 
   const targetPosition = targetOpen ? 'open' : 'closed'
   const matchingEntry = [...history].reverse().find((entry) => {

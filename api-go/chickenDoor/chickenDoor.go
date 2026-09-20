@@ -471,14 +471,8 @@ func isLimitActive(val string) bool {
 
 // @brief Resolves semantic door position ("geschlossen", "offen", "in Bewegung", etc.)
 //
-// Evaluates limit switch states (open/close) first:
-// - If close switch is active -> "geschlossen".
-// - If open switch is active -> "offen".
-// - If motor is currently running -> "in Bewegung".
-// - If last commanded action was "open" and close switch is released -> "offen".
-// - If last commanded action was "close" and close switch is active -> "geschlossen".
-// - If explicit position text is present in engineStatus -> mapped accordingly.
-// - Otherwise "Zwischenposition" (e.g. stopped midway).
+// Evaluates only the open and close limit switches. If neither switch is
+// active, the position is reported as "Zwischenposition".
 //
 // @param limitClose Current state of close limit switch (e.g. "ACTIVE" / "released").
 // @param limitOpen Current state of open limit switch (e.g. "ACTIVE" / "released").
@@ -489,42 +483,10 @@ func resolveDoorPosition(limitClose, limitOpen, engineStatus, lastAction string)
 	closeActive := isLimitActive(limitClose)
 	openActive := isLimitActive(limitOpen)
 
-	// Direct limit switch evaluation
 	if closeActive && !openActive {
 		return "geschlossen"
 	}
 	if openActive && !closeActive {
-		return "offen"
-	}
-	if isMotorRunningPosition(engineStatus) {
-		return "in Bewegung"
-	}
-
-	normStatus := strings.ToLower(strings.TrimSpace(engineStatus))
-	switch {
-	case strings.Contains(normStatus, "geschlossen") || strings.Contains(normStatus, "close") || strings.Contains(normStatus, "zu"):
-		return "geschlossen"
-	case strings.Contains(normStatus, "offen") || strings.Contains(normStatus, "open") || strings.Contains(normStatus, "auf"):
-		return "offen"
-	}
-
-	normAction := strings.ToLower(strings.TrimSpace(lastAction))
-	switch normAction {
-	case "open", "öffnen", "oeffnen":
-		if !closeActive {
-			return "offen"
-		}
-	case "close", "schließen", "schliessen":
-		if closeActive {
-			return "geschlossen"
-		}
-		return "Zwischenposition"
-	}
-
-	if closeActive {
-		return "geschlossen"
-	}
-	if openActive {
 		return "offen"
 	}
 
@@ -1432,26 +1394,10 @@ func (h *ChickenDoor) StatusHandler(w http.ResponseWriter, r *http.Request) {
 	doorPos := resolveDoorPosition(limitClose, limitOpen, position, engineAction)
 
 	h.mu.Lock()
-	// A controller restart can temporarily report both switches as released
-	// while the door is not moving. Preserve the last persisted final position
-	// instead of replacing it with a transient "Zwischenposition" value.
-	if doorPos == "Zwischenposition" && !isMotorRunningPosition(position) {
-		persistedPosition := strings.ToLower(strings.TrimSpace(h.lastStatusPosition))
-		if persistedPosition == "offen" || persistedPosition == "open" || persistedPosition == "auf" {
-			doorPos = "offen"
-		} else if persistedPosition == "geschlossen" || persistedPosition == "closed" || persistedPosition == "close" || persistedPosition == "zu" {
-			doorPos = "geschlossen"
-		}
-	}
-
 	// Persist the latest non-empty status values so the next UI load can fall
 	// back to them if MQTT is still empty.
 	if toString(msgs["status"]) != "" || sleepState != "" || wakeReason != "" || ip != "" || charging != "" || battery != "" || position != "" || limitClose != "" || limitOpen != "" {
-		if doorPos != "Zwischenposition" && doorPos != "in Bewegung" && doorPos != "unbekannt" {
-			h.lastStatusPosition = doorPos
-		} else {
-			h.lastStatusPosition = position
-		}
+		h.lastStatusPosition = doorPos
 		h.lastStatusAction = engineAction
 		h.lastStatusBattery = battery
 		h.lastStatusWakeReason = wakeReason
@@ -1469,13 +1415,8 @@ func (h *ChickenDoor) StatusHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	historyCopy := append([]ScheduleHistoryEntry(nil), h.scheduleHistory...)
 
-	displayPosition := doorPos
-	if displayPosition == "zwischenposition" && position != "" && position != "unbekannt" {
-		displayPosition = position
-	}
-
 	status := StatusResponse{
-		Position:         displayPosition,
+		Position:         doorPos,
 		LastAction:       engineAction,
 		Battery:          battery,
 		WakeReason:       wakeReason,
