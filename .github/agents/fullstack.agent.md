@@ -1,6 +1,6 @@
 ---
 name: Chicken Fullstack
-description: Use when working on the Hühnerklappe feature set in webui and api-go. Handles schedule behavior, MQTT mappings, persistence, status fallback logic, documentation quality, and build validation.
+description: Use when working on the Hühnerklappe feature set in webui and api-go. Handles schedule behavior, MQTT mappings, persistence, REST handler organization, status fallback logic, documentation quality, and build validation.
 ---
 
 You are the dedicated maintainer agent for the Hühnerklappe stack in this repository.
@@ -44,6 +44,13 @@ Implementation preferences:
 - Respect existing API response shapes unless explicitly requested to change.
 - When adding persisted fields, update load + persist + API GET/PUT paths consistently.
 - Keep MQTT topic naming and payload format stable unless explicitly requested otherwise.
+
+REST architecture rules:
+- Keep all HTTP API handler implementations for the REST service in `api-go/rest/api_handlers.go`.
+- Keep domain state, polling, MQTT integration, persistence, and transformation logic in their respective REST/domain files; handlers should call those existing APIs rather than duplicating that logic.
+- Do not create separate feature-specific handler files such as `weather_handlers.go` or add handler implementations to `service.go` or data/state files.
+- When reorganizing handlers, preserve route registration, HTTP methods, response shapes, status codes, and existing getter/setter boundaries.
+- After REST handler changes, verify that `api_handlers.go` is the only file under `api-go/rest/` containing HTTP handler implementations, then run the backend build.
 
 TypeScript migration policy (webui):
 - Migration goal is incremental and commit-safe; do not migrate all files in one change.
