@@ -265,23 +265,6 @@ func (s *topicValueStore) snapshot(prefix string) map[string]string {
 	return out
 }
 
-// @brief HTTP endpoint returning the full ETA in-memory tree as JSON.
-// @details
-// This handler serves /api/heating/summary and serializes the complete nested
-// ETA state that is continuously filled by the publish loop. It intentionally
-// returns the entire tree so frontend clients can select and aggregate values
-// according to their own view requirements.
-// @param[in,out] w HTTP response writer used for JSON output.
-// @param[in] r Incoming HTTP request (unused except for endpoint context).
-func HeatingSummary(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if payload, ok := getLatestPayload(); ok {
-		json.NewEncoder(w).Encode(payload)
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]any{})
-}
-
 func setLatestPayload(payload Varset_Head) {
 	latestPayload.mu.Lock()
 	latestPayload.payload = payload
@@ -296,43 +279,6 @@ func getLatestPayload() (Varset_Head, bool) {
 		return Varset_Head{}, false
 	}
 	return latestPayload.payload, true
-}
-
-// @brief HTTP endpoint returning synthetic recent heating history points.
-// @details
-// This handler serves /api/heating/history and currently generates synthetic
-// time-series values for the previous 12 hours in 5-minute steps. The optional
-// query parameter interval is echoed back for client display/selection logic.
-//
-// The generated payload is intended as fallback/demo data until persistent
-// history storage is connected.
-// @param[in,out] w HTTP response writer used for JSON output.
-// @param[in] r Incoming HTTP request carrying optional query parameters.
-func HeatingHistory(w http.ResponseWriter, r *http.Request) {
-	interval := r.URL.Query().Get("interval")
-	if interval == "" {
-		interval = "5m"
-	}
-
-	var points []map[string]any
-	end := time.Now().UTC()
-	start := end.Add(-12 * time.Hour)
-	t := start
-	for !t.After(end) {
-		min := t.Minute()
-		points = append(points, map[string]any{
-			"t":             t.Format("2006-01-02T15:04:05.000Z"),
-			"boiler_temp":   70.0 + float64(min%10)*0.4,
-			"buffer_top":    66.0 + float64(min%8)*0.3,
-			"buffer_bottom": 44.0 + float64(min%6)*0.25,
-			"return_temp":   50.0 + float64(min%12)*0.2,
-			"feed_rate":     30 + (min%5)*3,
-		})
-		t = t.Add(5 * time.Minute)
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"series": points, "interval": interval})
 }
 
 var httpClient = &http.Client{}

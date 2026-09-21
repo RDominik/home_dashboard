@@ -37,6 +37,7 @@ export default function App() {
           <NavLink to="/enyaq" style={linkStyle}>Škoda Enyaq</NavLink>
           <NavLink to="/goE" style={linkStyle}>goE</NavLink>
           <NavLink to="/huehnerklappe" style={linkStyle}>Motor</NavLink>
+          <NavLink to="/weather" style={linkStyle}>Wetterstation</NavLink>
           <NavLink to="/heating" style={linkStyle}>ETA Heizung</NavLink>
           <NavLink to="/grafana" style={linkStyle}>Grafana</NavLink>
           <NavLink to="/update" style={linkStyle}>Update</NavLink>

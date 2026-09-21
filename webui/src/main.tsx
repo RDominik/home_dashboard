@@ -10,6 +10,7 @@ import UpdatePage from './pages/UpdatePage'
 import GoE from './pages/goE'
 import Huehnerklappe from './pages/Huehnerklappe'
 import EnyaqPage from './pages/Enyaq'
+import Weather from './pages/Weather'
 
 const router = createBrowserRouter([
   {
@@ -23,7 +24,8 @@ const router = createBrowserRouter([
       { path: 'grafana', element: <Grafana /> },
       { path: 'huehnerklappe', element: <Huehnerklappe /> },
       { path: 'goE', element: <GoE /> },
-      { path: 'update', element: <UpdatePage /> }
+      { path: 'update', element: <UpdatePage /> },
+      { path: 'weather', element: <Weather /> }
     ],
   },
 ])

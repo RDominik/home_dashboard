@@ -96,7 +96,10 @@ func main() {
 	defer mqttManager.Stop()
 
 	// REST worker also runs from main.
-	restService := restpkg.NewRestService("rest/rest_config.json", "webgui/rest/varset", 60*time.Second)
+	restService, err := restpkg.NewRestService("rest/rest_config.json", "webgui/rest/varset", 60*time.Second)
+	if err != nil {
+		log.Fatalf("❌ REST service error: %v", err)
+	}
 	restService.Start(mqttManager)
 	defer restService.Stop()
 	log.Println("📡 REST service started from main")
@@ -128,6 +131,9 @@ func main() {
 	// Škoda Enyaq
 	mux.HandleFunc("/api/enyaq/", enyaqService.APIHandler)
 
+	// Shared REST services
+	mux.HandleFunc("/api/weather/", restService.APIHandler)
+
 	// Inverter
 	mux.HandleFunc("/api/inverter/summary", inverterSummary)
 
@@ -135,8 +141,8 @@ func main() {
 	mux.HandleFunc("/api/mqtt/status", mqttStatus)
 
 	// Heating
-	mux.HandleFunc("/api/heating/summary", restpkg.HeatingSummary)
-	mux.HandleFunc("/api/heating/history", restpkg.HeatingHistory)
+	mux.HandleFunc("/api/heating/summary", restService.APIHandler)
+	mux.HandleFunc("/api/heating/history", restService.APIHandler)
 
 	addr := ":8083"
 	log.Printf("🚀 API server starting on %s", addr)
