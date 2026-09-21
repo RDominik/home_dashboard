@@ -319,9 +319,12 @@ func (h *ChickenDoor) executeScheduleAction(action string) {
 	}
 	if action == "open" || action == "close" {
 		h.mu.Lock()
-		runtimeSeconds := h.motorAutoStopSeconds
+		runtimeSeconds := h.motorAutoStopOpenSeconds
+		if action == "close" {
+			runtimeSeconds = h.motorAutoStopCloseSeconds
+		}
 		h.mu.Unlock()
-		if err := h.publishMotorRuntime(runtimeSeconds); err != nil {
+		if err := h.publishMotorRuntime(action, runtimeSeconds); err != nil {
 			log.Printf("[chickendoor-schedule] runtime publish failed before action %s: %v", action, err)
 			return
 		}
@@ -489,7 +492,11 @@ func (h *ChickenDoor) scheduleTick() {
 		// awake window. Keep the controller awake for at least the configured
 		// motor runtime so a value such as 25 seconds is actually available.
 		if action != "none" && !actionAlreadyAtTarget {
-			runtimeSeconds := clampMotorAutoStopSeconds(h.motorAutoStopSeconds)
+			runtimeSeconds := h.motorAutoStopOpenSeconds
+			if action == "close" {
+				runtimeSeconds = h.motorAutoStopCloseSeconds
+			}
+			runtimeSeconds = clampMotorAutoStopSeconds(runtimeSeconds)
 			if awakeSeconds < runtimeSeconds {
 				awakeSeconds = runtimeSeconds
 			}

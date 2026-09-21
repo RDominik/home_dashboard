@@ -46,6 +46,8 @@ type HuehnerklappeStatus = {
 type UiStateResponse = {
   sleepTime?: number
   motorAutoStopSeconds?: number
+  motorAutoStopOpenSeconds?: number
+  motorAutoStopCloseSeconds?: number
   sleepUntil?: string
   controlMode?: ControlMode
   scheduleActive?: boolean
@@ -69,7 +71,8 @@ type PickerDraft = {
 
 export default function Huehnerklappe() {
   const [sleepTime, setSleepTime] = useState(60) // default 60 Sekunden
-  const [motorAutoStopSeconds, setMotorAutoStopSeconds] = useState(15)
+  const [motorAutoStopOpenSeconds, setMotorAutoStopOpenSeconds] = useState(15)
+  const [motorAutoStopCloseSeconds, setMotorAutoStopCloseSeconds] = useState(15)
   const [sleepUntil, setSleepUntil] = useState('')
   const [controlMode, setControlMode] = useState<ControlMode>('manual')
   const [scheduleActive, setScheduleActive] = useState(false)
@@ -120,8 +123,18 @@ export default function Huehnerklappe() {
       if (Number.isFinite(data.sleepTime)) {
         setSleepTime(Math.max(1, Math.min(86400, Number(data.sleepTime))))
       }
-      if (Number.isFinite(data.motorAutoStopSeconds)) {
-        setMotorAutoStopSeconds(Math.max(1, Math.min(60, Number(data.motorAutoStopSeconds))))
+      const legacyMotorRuntime = Number.isFinite(data.motorAutoStopSeconds)
+        ? Math.max(1, Math.min(60, Number(data.motorAutoStopSeconds)))
+        : null
+      if (Number.isFinite(data.motorAutoStopOpenSeconds)) {
+        setMotorAutoStopOpenSeconds(Math.max(1, Math.min(60, Number(data.motorAutoStopOpenSeconds))))
+      } else if (legacyMotorRuntime !== null) {
+        setMotorAutoStopOpenSeconds(legacyMotorRuntime)
+      }
+      if (Number.isFinite(data.motorAutoStopCloseSeconds)) {
+        setMotorAutoStopCloseSeconds(Math.max(1, Math.min(60, Number(data.motorAutoStopCloseSeconds))))
+      } else if (legacyMotorRuntime !== null) {
+        setMotorAutoStopCloseSeconds(legacyMotorRuntime)
       }
       if (typeof data.sleepUntil === 'string') {
         setSleepUntil(data.sleepUntil)
@@ -194,7 +207,8 @@ export default function Huehnerklappe() {
 
     const payload = {
       sleepTime,
-      motorAutoStopSeconds,
+      motorAutoStopOpenSeconds,
+      motorAutoStopCloseSeconds,
       sleepUntil,
       controlMode,
       scheduleActive,
@@ -216,7 +230,7 @@ export default function Huehnerklappe() {
     }, 250)
 
     return () => clearTimeout(timer)
-  }, [uiLoaded, sleepTime, motorAutoStopSeconds, sleepUntil, controlMode, scheduleActive, scheduleTimestamps, scheduleActions, awakeSeconds, historyExpanded])
+  }, [uiLoaded, sleepTime, motorAutoStopOpenSeconds, motorAutoStopCloseSeconds, sleepUntil, controlMode, scheduleActive, scheduleTimestamps, scheduleActions, awakeSeconds, historyExpanded])
 
   const sendCommand = async (key: string, value: string | number | null = null, successMessage: string | null = null) => {
     setSending(true)
@@ -627,18 +641,29 @@ export default function Huehnerklappe() {
 
         <div style={{ marginTop: 14, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <label style={{ fontSize: 14, color: '#6b7280' }}>
-            Motor Auto-Stop (Sekunden, 1-60):
+            Auto-Stop Öffnen (Sekunden, 1-60):
             <input
               type="number"
               min={1}
               max={60}
-              value={motorAutoStopSeconds}
-              onChange={e => setMotorAutoStopSeconds(Math.max(1, Math.min(60, Number(e.target.value) || 1)))}
+              value={motorAutoStopOpenSeconds}
+              onChange={e => setMotorAutoStopOpenSeconds(Math.max(1, Math.min(60, Number(e.target.value) || 1)))}
+              style={{ marginLeft: 8, padding: '6px 8px', borderRadius: 6, border: '1px solid #e5e7eb', width: 80 }}
+            />
+          </label>
+          <label style={{ fontSize: 14, color: '#6b7280' }}>
+            Auto-Stop Schließen (Sekunden, 1-60):
+            <input
+              type="number"
+              min={1}
+              max={60}
+              value={motorAutoStopCloseSeconds}
+              onChange={e => setMotorAutoStopCloseSeconds(Math.max(1, Math.min(60, Number(e.target.value) || 1)))}
               style={{ marginLeft: 8, padding: '6px 8px', borderRadius: 6, border: '1px solid #e5e7eb', width: 80 }}
             />
           </label>
           <span style={{ fontSize: 12, color: '#6b7280' }}>
-            Wenn der Motor laeuft, sendet das Backend nach Ablauf automatisch "stop".
+            Das Backend schreibt die Werte als runtime open bzw. runtime close und stoppt danach automatisch.
           </span>
         </div>
 

@@ -52,9 +52,12 @@ func (h *ChickenDoor) SetHandler(w http.ResponseWriter, r *http.Request) {
 		command := strings.ToLower(strings.TrimSpace(toString(req.Value)))
 		if command == "open" || command == "close" {
 			h.mu.Lock()
-			runtimeSeconds := h.motorAutoStopSeconds
+			runtimeSeconds := h.motorAutoStopOpenSeconds
+			if command == "close" {
+				runtimeSeconds = h.motorAutoStopCloseSeconds
+			}
 			h.mu.Unlock()
-			if err := h.publishMotorRuntime(runtimeSeconds); err != nil {
+			if err := h.publishMotorRuntime(command, runtimeSeconds); err != nil {
 				jsonResponse(w, map[string]any{"ok": false, "error": err.Error()})
 				return
 			}

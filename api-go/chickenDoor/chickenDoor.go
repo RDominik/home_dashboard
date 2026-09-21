@@ -19,7 +19,8 @@ import (
 )
 
 const nanoSetPrefix = "nano/esp32"
-const motorRuntimeTopic = nanoSetPrefix + "/runtime"
+const motorRuntimeOpenTopic = nanoSetPrefix + "/runtime/open"
+const motorRuntimeCloseTopic = nanoSetPrefix + "/runtime/close"
 const stateDBPathDefault = "data/chickendoor.db"
 const stateBucketName = "chickendoor"
 const stateKey = "state"
@@ -101,19 +102,20 @@ type ChickenDoor struct {
 	onlineAt           time.Time
 	wakeDeltaMs        int64
 
-	scheduleAwakeSeconds  int
-	scheduleTimestamps    []string
-	scheduleEntries       []ScheduleEntry
-	scheduleActive        bool
-	scheduleWakeAt        time.Time
-	pendingScheduleAction string
-	scheduleSleepPending  bool
-	scheduleHistory       []ScheduleHistoryEntry
-	sleepTime             int
-	motorAutoStopSeconds  int
-	sleepUntil            string
-	controlMode           string
-	historyExpanded       bool
+	scheduleAwakeSeconds      int
+	scheduleTimestamps        []string
+	scheduleEntries           []ScheduleEntry
+	scheduleActive            bool
+	scheduleWakeAt            time.Time
+	pendingScheduleAction     string
+	scheduleSleepPending      bool
+	scheduleHistory           []ScheduleHistoryEntry
+	sleepTime                 int
+	motorAutoStopOpenSeconds  int
+	motorAutoStopCloseSeconds int
+	sleepUntil                string
+	controlMode               string
+	historyExpanded           bool
 	// motorRunningSince stores the timestamp when the motor was commanded or detected to start moving.
 	motorRunningSince time.Time
 	// motorRunningAction stores the active motor command direction ("open", "close", "stop").
@@ -144,39 +146,43 @@ type ChickenDoor struct {
 }
 
 type persistedState struct {
-	ScheduleAwakeSeconds  int                    `json:"scheduleAwakeSeconds"`
-	ScheduleTimestamps    []string               `json:"scheduleTimestamps"`
-	ScheduleEntries       []ScheduleEntry        `json:"scheduleEntries,omitempty"`
-	ScheduleActive        bool                   `json:"scheduleActive"`
-	PendingScheduleAction string                 `json:"pendingScheduleAction,omitempty"`
-	ScheduleSleepPending  bool                   `json:"scheduleSleepPending,omitempty"`
-	ScheduleHistory       []ScheduleHistoryEntry `json:"scheduleHistory"`
-	SleepTime             int                    `json:"sleepTime"`
-	MotorAutoStopSeconds  int                    `json:"motorAutoStopSeconds"`
-	SleepUntil            string                 `json:"sleepUntil"`
-	ControlMode           string                 `json:"controlMode"`
-	HistoryExpanded       bool                   `json:"historyExpanded"`
-	LastStatusPosition    string                 `json:"lastStatusPosition"`
-	LastStatusAction      string                 `json:"lastStatusAction"`
-	LastStatusBattery     string                 `json:"lastStatusBattery"`
-	LastStatusWakeReason  string                 `json:"lastStatusWakeReason"`
-	LastStatusController  string                 `json:"lastStatusController"`
-	LastStatusSleep       string                 `json:"lastStatusSleep"`
-	LastStatusIP          string                 `json:"lastStatusIP"`
-	LastStatusCharging    string                 `json:"lastStatusCharging"`
-	LastStatusLimitClose  string                 `json:"lastStatusLimitClose,omitempty"`
-	LastStatusLimitOpen   string                 `json:"lastStatusLimitOpen,omitempty"`
+	ScheduleAwakeSeconds      int                    `json:"scheduleAwakeSeconds"`
+	ScheduleTimestamps        []string               `json:"scheduleTimestamps"`
+	ScheduleEntries           []ScheduleEntry        `json:"scheduleEntries,omitempty"`
+	ScheduleActive            bool                   `json:"scheduleActive"`
+	PendingScheduleAction     string                 `json:"pendingScheduleAction,omitempty"`
+	ScheduleSleepPending      bool                   `json:"scheduleSleepPending,omitempty"`
+	ScheduleHistory           []ScheduleHistoryEntry `json:"scheduleHistory"`
+	SleepTime                 int                    `json:"sleepTime"`
+	MotorAutoStopSeconds      int                    `json:"motorAutoStopSeconds,omitempty"`
+	MotorAutoStopOpenSeconds  int                    `json:"motorAutoStopOpenSeconds"`
+	MotorAutoStopCloseSeconds int                    `json:"motorAutoStopCloseSeconds"`
+	SleepUntil                string                 `json:"sleepUntil"`
+	ControlMode               string                 `json:"controlMode"`
+	HistoryExpanded           bool                   `json:"historyExpanded"`
+	LastStatusPosition        string                 `json:"lastStatusPosition"`
+	LastStatusAction          string                 `json:"lastStatusAction"`
+	LastStatusBattery         string                 `json:"lastStatusBattery"`
+	LastStatusWakeReason      string                 `json:"lastStatusWakeReason"`
+	LastStatusController      string                 `json:"lastStatusController"`
+	LastStatusSleep           string                 `json:"lastStatusSleep"`
+	LastStatusIP              string                 `json:"lastStatusIP"`
+	LastStatusCharging        string                 `json:"lastStatusCharging"`
+	LastStatusLimitClose      string                 `json:"lastStatusLimitClose,omitempty"`
+	LastStatusLimitOpen       string                 `json:"lastStatusLimitOpen,omitempty"`
 }
 
 type uiStateRequest struct {
-	SleepTime            int             `json:"sleepTime"`
-	MotorAutoStopSeconds int             `json:"motorAutoStopSeconds"`
-	SleepUntil           string          `json:"sleepUntil"`
-	ControlMode          string          `json:"controlMode"`
-	HistoryExpanded      bool            `json:"historyExpanded"`
-	ScheduleTimestamps   []string        `json:"scheduleTimestamps"`
-	ScheduleEntries      []ScheduleEntry `json:"scheduleEntries"`
-	AwakeSeconds         int             `json:"awakeSeconds"`
+	SleepTime                 int             `json:"sleepTime"`
+	MotorAutoStopSeconds      int             `json:"motorAutoStopSeconds,omitempty"`
+	MotorAutoStopOpenSeconds  int             `json:"motorAutoStopOpenSeconds"`
+	MotorAutoStopCloseSeconds int             `json:"motorAutoStopCloseSeconds"`
+	SleepUntil                string          `json:"sleepUntil"`
+	ControlMode               string          `json:"controlMode"`
+	HistoryExpanded           bool            `json:"historyExpanded"`
+	ScheduleTimestamps        []string        `json:"scheduleTimestamps"`
+	ScheduleEntries           []ScheduleEntry `json:"scheduleEntries"`
+	AwakeSeconds              int             `json:"awakeSeconds"`
 }
 
 // @brief Clamps motor auto-stop setting to the allowed range.
@@ -192,17 +198,22 @@ func clampMotorAutoStopSeconds(seconds int) int {
 	return seconds
 }
 
-// @brief Publishes the configured motor runtime to the controller.
-//
-// The backend still enforces the same timeout locally, but the controller also
-// receives the value so both sides use the configured runtime when a movement
-// command is started. The payload is expressed in seconds to match the UI and
-// the persisted motorAutoStopSeconds setting.
-// @param seconds Requested motor runtime in seconds.
+// @brief Publishes the configured directional motor runtime to the controller.
+// @details
+// The controller receives separate runtimes because opening and closing can
+// require different movement durations. The backend continues enforcing the
+// same directional timeout locally, while this MQTT value lets the controller
+// apply the matching stop limit for the next movement command.
+// @param action Motor direction, expected to be "open" or "close".
+// @param seconds Requested directional motor runtime in seconds.
 // @return An error when the MQTT publish cannot be completed.
-func (h *ChickenDoor) publishMotorRuntime(seconds int) error {
+func (h *ChickenDoor) publishMotorRuntime(action string, seconds int) error {
 	seconds = clampMotorAutoStopSeconds(seconds)
-	return h.mqttManager.Publish(motorRuntimeTopic, seconds)
+	topic := motorRuntimeOpenTopic
+	if action == "close" {
+		topic = motorRuntimeCloseTopic
+	}
+	return h.mqttManager.Publish(topic, seconds)
 }
 
 // @brief Opens/creates the local bbolt state database.
@@ -284,11 +295,22 @@ func (h *ChickenDoor) loadPersistedState() {
 	h.scheduleSleepPending = state.ScheduleSleepPending
 	h.scheduleHistory = append([]ScheduleHistoryEntry(nil), state.ScheduleHistory...)
 	h.sleepTime = state.SleepTime
-	h.motorAutoStopSeconds = state.MotorAutoStopSeconds
-	if h.motorAutoStopSeconds == 0 {
-		h.motorAutoStopSeconds = defaultMotorAutoStopSeconds
+	// Migrate the former single timeout into both directional settings when a
+	// database created by an older backend is opened for the first time.
+	legacyRuntime := clampMotorAutoStopSeconds(state.MotorAutoStopSeconds)
+	if state.MotorAutoStopOpenSeconds > 0 {
+		h.motorAutoStopOpenSeconds = clampMotorAutoStopSeconds(state.MotorAutoStopOpenSeconds)
+	} else if state.MotorAutoStopSeconds > 0 {
+		h.motorAutoStopOpenSeconds = legacyRuntime
 	} else {
-		h.motorAutoStopSeconds = clampMotorAutoStopSeconds(h.motorAutoStopSeconds)
+		h.motorAutoStopOpenSeconds = defaultMotorAutoStopSeconds
+	}
+	if state.MotorAutoStopCloseSeconds > 0 {
+		h.motorAutoStopCloseSeconds = clampMotorAutoStopSeconds(state.MotorAutoStopCloseSeconds)
+	} else if state.MotorAutoStopSeconds > 0 {
+		h.motorAutoStopCloseSeconds = legacyRuntime
+	} else {
+		h.motorAutoStopCloseSeconds = defaultMotorAutoStopSeconds
 	}
 	h.sleepUntil = state.SleepUntil
 	h.controlMode = state.ControlMode
@@ -323,28 +345,29 @@ func (h *ChickenDoor) persistState() {
 
 	h.mu.Lock()
 	state := persistedState{
-		ScheduleAwakeSeconds:  h.scheduleAwakeSeconds,
-		ScheduleTimestamps:    append([]string(nil), h.scheduleTimestamps...),
-		ScheduleEntries:       append([]ScheduleEntry(nil), h.scheduleEntries...),
-		ScheduleActive:        h.scheduleActive,
-		PendingScheduleAction: h.pendingScheduleAction,
-		ScheduleSleepPending:  h.scheduleSleepPending,
-		ScheduleHistory:       append([]ScheduleHistoryEntry(nil), h.scheduleHistory...),
-		SleepTime:             h.sleepTime,
-		MotorAutoStopSeconds:  h.motorAutoStopSeconds,
-		SleepUntil:            h.sleepUntil,
-		ControlMode:           h.controlMode,
-		HistoryExpanded:       h.historyExpanded,
-		LastStatusPosition:    h.lastStatusPosition,
-		LastStatusAction:      h.lastStatusAction,
-		LastStatusBattery:     h.lastStatusBattery,
-		LastStatusWakeReason:  h.lastStatusWakeReason,
-		LastStatusController:  h.lastStatusController,
-		LastStatusSleep:       h.lastStatusSleep,
-		LastStatusIP:          h.lastStatusIP,
-		LastStatusCharging:    h.lastStatusCharging,
-		LastStatusLimitClose:  h.lastStatusLimitClose,
-		LastStatusLimitOpen:   h.lastStatusLimitOpen,
+		ScheduleAwakeSeconds:      h.scheduleAwakeSeconds,
+		ScheduleTimestamps:        append([]string(nil), h.scheduleTimestamps...),
+		ScheduleEntries:           append([]ScheduleEntry(nil), h.scheduleEntries...),
+		ScheduleActive:            h.scheduleActive,
+		PendingScheduleAction:     h.pendingScheduleAction,
+		ScheduleSleepPending:      h.scheduleSleepPending,
+		ScheduleHistory:           append([]ScheduleHistoryEntry(nil), h.scheduleHistory...),
+		SleepTime:                 h.sleepTime,
+		MotorAutoStopOpenSeconds:  h.motorAutoStopOpenSeconds,
+		MotorAutoStopCloseSeconds: h.motorAutoStopCloseSeconds,
+		SleepUntil:                h.sleepUntil,
+		ControlMode:               h.controlMode,
+		HistoryExpanded:           h.historyExpanded,
+		LastStatusPosition:        h.lastStatusPosition,
+		LastStatusAction:          h.lastStatusAction,
+		LastStatusBattery:         h.lastStatusBattery,
+		LastStatusWakeReason:      h.lastStatusWakeReason,
+		LastStatusController:      h.lastStatusController,
+		LastStatusSleep:           h.lastStatusSleep,
+		LastStatusIP:              h.lastStatusIP,
+		LastStatusCharging:        h.lastStatusCharging,
+		LastStatusLimitClose:      h.lastStatusLimitClose,
+		LastStatusLimitOpen:       h.lastStatusLimitOpen,
 	}
 	h.mu.Unlock()
 
@@ -370,10 +393,11 @@ func (h *ChickenDoor) persistState() {
 // @return Initialized ChickenDoor instance with a ready-to-use done channel.
 func New(mqttManager *mqtt.Manager) *ChickenDoor {
 	h := &ChickenDoor{
-		mqttManager:          mqttManager,
-		db:                   openStateDB(),
-		done:                 make(chan struct{}),
-		motorAutoStopSeconds: defaultMotorAutoStopSeconds,
+		mqttManager:               mqttManager,
+		db:                        openStateDB(),
+		done:                      make(chan struct{}),
+		motorAutoStopOpenSeconds:  defaultMotorAutoStopSeconds,
+		motorAutoStopCloseSeconds: defaultMotorAutoStopSeconds,
 	}
 	h.loadPersistedState()
 	return h
@@ -458,8 +482,16 @@ func (h *ChickenDoor) autoStopTick() {
 		h.lastStatusLimitOpen = limitOpen
 	}
 
-	timeoutSeconds := clampMotorAutoStopSeconds(h.motorAutoStopSeconds)
-	h.motorAutoStopSeconds = timeoutSeconds
+	timeoutSeconds := h.motorAutoStopOpenSeconds
+	if h.motorRunningAction == "close" || h.motorRunningAction == "schließen" || h.motorRunningAction == "schliessen" {
+		timeoutSeconds = h.motorAutoStopCloseSeconds
+	}
+	timeoutSeconds = clampMotorAutoStopSeconds(timeoutSeconds)
+	if h.motorRunningAction == "close" || h.motorRunningAction == "schließen" || h.motorRunningAction == "schliessen" {
+		h.motorAutoStopCloseSeconds = timeoutSeconds
+	} else {
+		h.motorAutoStopOpenSeconds = timeoutSeconds
+	}
 
 	now := time.Now()
 	// Case 1: Motor is not recorded as running yet.
@@ -877,15 +909,16 @@ func (h *ChickenDoor) UIStateHandler(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		h.mu.Lock()
 		response := map[string]any{
-			"sleepTime":            h.sleepTime,
-			"motorAutoStopSeconds": h.motorAutoStopSeconds,
-			"sleepUntil":           h.sleepUntil,
-			"controlMode":          h.controlMode,
-			"historyExpanded":      h.historyExpanded,
-			"scheduleTimestamps":   append([]string(nil), h.scheduleTimestamps...),
-			"scheduleEntries":      append([]ScheduleEntry(nil), h.scheduleEntries...),
-			"awakeSeconds":         h.scheduleAwakeSeconds,
-			"scheduleActive":       h.scheduleActive,
+			"sleepTime":                 h.sleepTime,
+			"motorAutoStopOpenSeconds":  h.motorAutoStopOpenSeconds,
+			"motorAutoStopCloseSeconds": h.motorAutoStopCloseSeconds,
+			"sleepUntil":                h.sleepUntil,
+			"controlMode":               h.controlMode,
+			"historyExpanded":           h.historyExpanded,
+			"scheduleTimestamps":        append([]string(nil), h.scheduleTimestamps...),
+			"scheduleEntries":           append([]ScheduleEntry(nil), h.scheduleEntries...),
+			"awakeSeconds":              h.scheduleAwakeSeconds,
+			"scheduleActive":            h.scheduleActive,
 		}
 		h.mu.Unlock()
 		jsonResponse(w, response)
@@ -899,8 +932,18 @@ func (h *ChickenDoor) UIStateHandler(w http.ResponseWriter, r *http.Request) {
 
 		h.mu.Lock()
 		h.sleepTime = req.SleepTime
+		if req.MotorAutoStopOpenSeconds > 0 {
+			h.motorAutoStopOpenSeconds = clampMotorAutoStopSeconds(req.MotorAutoStopOpenSeconds)
+		}
+		if req.MotorAutoStopCloseSeconds > 0 {
+			h.motorAutoStopCloseSeconds = clampMotorAutoStopSeconds(req.MotorAutoStopCloseSeconds)
+		}
+		// Accept the old field for clients that have not migrated yet. It updates
+		// both directions, preserving the previous single-value behavior.
 		if req.MotorAutoStopSeconds > 0 {
-			h.motorAutoStopSeconds = clampMotorAutoStopSeconds(req.MotorAutoStopSeconds)
+			runtime := clampMotorAutoStopSeconds(req.MotorAutoStopSeconds)
+			h.motorAutoStopOpenSeconds = runtime
+			h.motorAutoStopCloseSeconds = runtime
 		}
 		h.sleepUntil = strings.TrimSpace(req.SleepUntil)
 		if req.ControlMode == "manual" || req.ControlMode == "schedule" {
