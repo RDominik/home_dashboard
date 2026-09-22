@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -353,7 +354,9 @@ func (s *WeatherService) refresh() {
 	query := url.Values{}
 	query.Set("stationId", settings.StationID)
 	query.Set("format", "json")
-	query.Set("units", settings.Units)
+	// The UI stores descriptive unit names, while Weather Underground expects
+	// the compact provider codes m (metric) or e (imperial).
+	query.Set("units", weatherProviderUnits(settings.Units))
 	query.Set("numericPrecision", "decimal")
 	query.Set("apiKey", settings.APIKey)
 	request, err := http.NewRequestWithContext(s.ctx, http.MethodGet, weatherAPIEndpoint+"?"+query.Encode(), nil)
@@ -368,7 +371,13 @@ func (s *WeatherService) refresh() {
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		s.recordError(fmt.Errorf("Weather Underground antwortet mit HTTP %d", response.StatusCode))
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+		providerMessage := strings.TrimSpace(string(body))
+		if providerMessage != "" {
+			s.recordError(fmt.Errorf("Weather Underground antwortet mit HTTP %d: %s", response.StatusCode, providerMessage))
+		} else {
+			s.recordError(fmt.Errorf("Weather Underground antwortet mit HTTP %d", response.StatusCode))
+		}
 		return
 	}
 	var payload weatherAPIResponse
@@ -391,6 +400,21 @@ func (s *WeatherService) refresh() {
 	if err := s.persist(); err != nil {
 		log.Printf("[weather] persist failed: %v", err)
 	}
+}
+
+// @brief Converts the UI unit name to the Weather Underground API code.
+// @details
+// Weather settings intentionally use readable values for the frontend and
+// persistence contract. The provider endpoint instead requires "m" for metric
+// observations and "e" for imperial observations; this adapter keeps that
+// provider-specific detail at the HTTP boundary.
+// @param[in] units Normalized application unit name.
+// @return Weather Underground unit code, either "e" or "m".
+func weatherProviderUnits(units string) string {
+	if units == "imperial" {
+		return "e"
+	}
+	return "m"
 }
 
 // @brief Records the latest refresh error while retaining cached data.
