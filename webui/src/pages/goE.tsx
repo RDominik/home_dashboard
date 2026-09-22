@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import PageHeader from '../components/PageHeader'
 
 const API = 'http://192.168.188.97:8083/api/wallbox'
 
@@ -87,10 +88,7 @@ export default function GoE() {
 
   return (
     <div style={{ maxWidth: 700, margin: '0 auto' }}>
-      <h1 style={{ marginBottom: 4 }}>Wallbox Steuerung</h1>
-      <p style={{ color: '#6b7280', marginTop: 0, marginBottom: 24 }}>
-        go-eCharger Einstellungen per MQTT setzen
-      </p>
+      <PageHeader eyebrow="GO-ECHARGER" title="goE" subtitle="Wallbox und Ladevorgang" />
 
       {feedback && (
         <div style={{

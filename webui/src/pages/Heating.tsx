@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import './Heating.css'
+import PageHeader from '../components/PageHeader'
 
 type Tab = { key: string; label: string }
 type DayKey = 'mo' | 'di' | 'mi' | 'do' | 'fr' | 'sa' | 'so'
@@ -83,30 +84,34 @@ export default function Heating() {
 
   return (
     <div className="eta-wrap">
+      <div className="eta-header-shell">
+        <PageHeader
+          eyebrow="ETA HEIZSYSTEM"
+          title="ETA Heizung"
+          subtitle="Heizung und Wärmesystem"
+        />
+      </div>
       <div className="eta-screen">
-        <header className="eta-top">
-          <div className="eta-brand">ETA</div>
-          <nav className="eta-tabs" aria-label="Heating subpages">
-            {TABS.map((tab) => (
-              <button
-                type="button"
-                key={tab.key}
-                className={activeTab === tab.key ? 'eta-tab eta-tab-active' : 'eta-tab'}
-                onClick={() => setActiveTab(tab.key)}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </nav>
-          <div className="eta-top-icons">
+        <nav className="eta-tabs" aria-label="Heating subpages">
+          {TABS.map((tab) => (
+            <button
+              type="button"
+              key={tab.key}
+              className={activeTab === tab.key ? 'eta-tab eta-tab-active' : 'eta-tab'}
+              onClick={() => setActiveTab(tab.key)}
+            >
+              {tab.label}
+            </button>
+          ))}
+          <div className="eta-view-controls" aria-label="Ansichtsaktionen">
             <div className="eta-icon">Play</div>
             <div className="eta-icon">View</div>
             <div className="eta-icon">?</div>
           </div>
-        </header>
-
+        </nav>
         <div className="eta-main">
           <section className="eta-stage">
+            {activeTab === 'kessel' && <TabStatusBox main={PANEL_STATUS.kessel.main} sub={PANEL_STATUS.kessel.sub} />}
             {activeTab === 'kessel' && <KesselSubpage d={metrics} />}
             {activeTab === 'puffer' && <PufferSubpage d={metrics} />}
             {activeTab === 'hk' && <HkSubpage d={metrics} />}
@@ -239,13 +244,11 @@ function RightActions({ items }: { items: string[] }) {
 }
 
 function KesselSubpage({ d }: MetricsSubpageProps) {
-  const status = PANEL_STATUS.kessel
   const pressureValue = d?.boiler_pressure ?? (typeof d?.boiler_temp === 'number' ? d.boiler_temp / 38 : null)
   const pressureText = pressureValue == null ? '' : `${fmt(pressureValue)} bar`
 
   return (
     <div className="eta-view eta-grid-kessel">
-      <TabStatusBox main={status.main} sub={status.sub} />
       <div className="eta-machine-block eta-kessel-block">
         <div className="eta-kessel-canvas">
           <img className="eta-kessel-image" src="/produktbild-eta-hackgutkessel-ehack.png" alt="Heizkessel" />

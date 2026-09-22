@@ -1,7 +1,9 @@
+import PageHeader from '../components/PageHeader'
+
 export default function DashboardHome() {
   return (
     <div>
-      <h1>Übersicht</h1>
+      <PageHeader eyebrow="SYSTEMÜBERSICHT" title="Übersicht" subtitle="System-Dashboard" />
       <p>Willkommen zur ETA Weboberfläche. Wähle links ein Dashboard.</p>
       <ul>
         <li>Wallbox-Status (go-eCharger)</li>

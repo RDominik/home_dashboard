@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { AreaChartCard } from '../components/Charts'
+import PageHeader from '../components/PageHeader'
 
 type InverterSummary = {
   ppv?: number
@@ -50,7 +51,7 @@ export default function Inverter() {
 
   return (
     <div>
-      <h1>Wechselrichter</h1>
+      <PageHeader eyebrow="WECHSELRICHTER" title="Wechselrichter" subtitle="PV-Erzeugung, Hausverbrauch und Batterie" />
       {err && <div style={{background:'#fff3cd', border:'1px solid #ffeeba', color:'#856404', padding:10, borderRadius:6, margin:'8px 0'}}>{err}</div>}
       <Cards items={cards} />
       <div style={{display:'grid', gridTemplateColumns:'1fr', gap:12, marginTop:12}}>

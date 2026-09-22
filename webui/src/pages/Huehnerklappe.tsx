@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react'
 import { useEffect, useRef, useState } from 'react'
+import PageHeader from '../components/PageHeader'
 
 const API = '/api/huehnerklappe'
 
@@ -575,10 +576,7 @@ export default function Huehnerklappe() {
 
   return (
     <div style={{ width: '100%', maxWidth: 1200, minWidth: 0, margin: '0 auto', boxSizing: 'border-box' }}>
-      <h1 style={{ marginBottom: 4 }}>Hühnerklappe Steuerung</h1>
-      <p style={{ color: '#6b7280', marginTop: 0, marginBottom: 24 }}>
-        Klappe öffnen/schließen und Status anzeigen
-      </p>
+      <PageHeader eyebrow="MQTT / HÜHNERKLAPPE" title="Motor" subtitle="Hühnerklappe und Steuerung" />
 
       {/* Feedback */}
       {feedback && (

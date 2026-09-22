@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import PageHeader from '../components/PageHeader'
 
 type UpdateResult = {
   step: string
@@ -70,10 +71,7 @@ export default function UpdatePage() {
 
   return (
     <div style={{ maxWidth: 700, margin: '0 auto' }}>
-      <h1 style={{ marginBottom: 5 }}>Update App</h1>
-      <p style={{ color: '#6b7280', marginTop: 0, marginBottom: 24 }}>
-        Nutzt den externen Host-Service auf Port 8090.
-      </p>
+      <PageHeader eyebrow="SYSTEM UPDATE" title="Update" subtitle="Systemaktualisierung" />
 
       <div style={{ ...cardStyle, borderLeft: '4px solid #f59e0b' }}>
         <h3 style={{ marginTop: 0, color: '#374151' }}>🚀 System Update</h3>

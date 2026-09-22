@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import PageHeader from '../components/PageHeader'
 
 export default function Grafana() {
   const [url, setUrl] = useState('http://192.168.188.97:3000/public-dashboards/12b8f580467f4aa7b432928f0a4ec2be?refresh=5s&from=now-6h&to=now&timezone=browser')
@@ -13,7 +14,7 @@ export default function Grafana() {
 
   return (
     <div style={{height:'100%', display:'flex', flexDirection:'column', background: '#ffffff' }}>
-      <h1>Übersicht Energieverbrauch</h1>
+      <PageHeader eyebrow="GRAFANA" title="Grafana" subtitle="Energieverbrauch und Verlauf" />
       {/* <div style={{display:'flex', gap:8, alignItems:'center', marginBottom:8}}>
         <label htmlFor="gurl" style={{color:'#974141'}}>URL:</label>
         <input id="gurl" value={url} onChange={e=>setUrl(e.target.value)} style={{flex:1, padding:'8px 10px', border:'1px solid #ddd', borderRadius:6}} />

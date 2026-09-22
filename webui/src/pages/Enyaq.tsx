@@ -1,5 +1,6 @@
 import type { CSSProperties, FormEvent } from 'react'
 import React, { useEffect, useState } from 'react'
+import PageHeader, { pageHeaderButtonStyle } from '../components/PageHeader'
 
 const API = '/api/enyaq'
 
@@ -221,68 +222,32 @@ export default function EnyaqPage() {
     border: '1px solid #e2e8f0',
   }
 
-  const btnPrimaryStyle: CSSProperties = {
-    padding: '10px 18px',
-    borderRadius: 8,
-    border: 'none',
-    background: '#047857',
-    color: '#ffffff',
-    fontWeight: 600,
-    fontSize: 14,
-    cursor: 'pointer',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 8,
-  }
-
-  const btnSecondaryStyle: CSSProperties = {
-    padding: '10px 18px',
-    borderRadius: 8,
-    border: '1px solid #cbd5e1',
-    background: '#f8fafc',
-    color: '#1e293b',
-    fontWeight: 600,
-    fontSize: 14,
-    cursor: 'pointer',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 8,
-  }
-
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-      {/* Page Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16, marginBottom: 20 }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 28, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 10 }}>
-            🚗 {data?.modelName || 'Škoda Enyaq'}
-          </h1>
-          <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: 14 }}>
-            Fahrzeugdaten, Batterie, Reichweite, Ladezustand & 10-Minuten MQTT Sync
-          </p>
-        </div>
-
-        {/* Action Buttons */}
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+      <PageHeader
+        eyebrow="ŠKODA CONNECT"
+        title={data?.modelName || 'Škoda Enyaq'}
+        subtitle="Fahrzeugdaten, Batterie, Reichweite und Ladezustand"
+        actions={<div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontFamily: 'Arial, sans-serif' }}>
           <button
             type="button"
             onClick={triggerManualFetch}
             disabled={fetching}
-            style={{ ...btnSecondaryStyle, opacity: fetching ? 0.6 : 1 }}
+            style={{ ...pageHeaderButtonStyle('#fff', '#263d52'), borderColor: '#fff', opacity: fetching ? 0.6 : 1 }}
             title="Jetzt sofort telemetry abfragen"
           >
-            {fetching ? '⏳ Aktualisiere…' : '🔄 Jetzt aktualisieren'}
+            {fetching ? '⟳ Aktualisiere …' : '↻ Aktualisieren'}
           </button>
 
           <button
             type="button"
             onClick={openConfigModal}
-            style={btnPrimaryStyle}
+            style={{ ...pageHeaderButtonStyle('transparent', '#fff'), borderColor: '#91a6b7' }}
           >
-            ⚙️ API-Token & Einstellungen
+            ⚙ Einstellungen
           </button>
-        </div>
-      </div>
+        </div>}
+      />
 
       {/* Feedback Banner */}
       {feedback && (
@@ -328,7 +293,7 @@ export default function EnyaqPage() {
           <button
             type="button"
             onClick={openConfigModal}
-            style={{ ...btnPrimaryStyle, background: '#d97706', padding: '8px 14px', fontSize: 13 }}
+            style={{ ...pageHeaderButtonStyle('#d97706', '#fff'), padding: '8px 14px', fontSize: 13 }}
           >
             Token jetzt eingeben
           </button>
@@ -802,14 +767,14 @@ export default function EnyaqPage() {
                 <button
                   type="button"
                   onClick={() => setModalOpen(false)}
-                  style={{ ...btnSecondaryStyle, padding: '9px 16px' }}
+                  style={{ ...pageHeaderButtonStyle('#f3f7f7', '#31565c'), padding: '9px 16px' }}
                 >
                   Abbrechen
                 </button>
                 <button
                   type="submit"
                   disabled={savingConfig}
-                  style={{ ...btnPrimaryStyle, padding: '9px 18px', opacity: savingConfig ? 0.6 : 1 }}
+                  style={{ ...pageHeaderButtonStyle('#0f766e', '#fff'), padding: '9px 18px', opacity: savingConfig ? 0.6 : 1 }}
                 >
                   {savingConfig ? '💾 Speichere…' : '💾 In Datenbank speichern'}
                 </button>

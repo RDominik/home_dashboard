@@ -24,7 +24,6 @@ export default function App() {
     dateStyle: 'medium',
     timeStyle: 'medium',
   }).format(now)
-
   return (
     <div style={{ position: 'fixed', inset: 0, display: 'flex', overflow: 'hidden', background: '#cfcbcbea' }}>
       <aside style={{ width: 260, flexShrink: 0, overflow: 'hidden', borderRight: '1px solid #020202', padding: 16, background:'#cac6c6a9', display: 'flex', flexDirection: 'column' }}>

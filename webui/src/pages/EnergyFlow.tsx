@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import PageHeader from '../components/PageHeader';
 
 // Eigene SVG-Icons
 const SolarPanelIcon = () => (
@@ -32,7 +33,7 @@ const SolarPanelIcon = () => (
   </svg>
 );
 
-const BatteryIcon = ({ level = 65 }) => {
+const BatteryIcon = ({ level = 65, showValue = true }) => {
   // Farbe basierend auf Ladestand
   const getFillColor = () => {
     if (level <= 20) return '#ef4444'; // Rot bei niedrig
@@ -74,7 +75,7 @@ const BatteryIcon = ({ level = 65 }) => {
       />
       
       {/* Prozentanzeige */}
-      <text 
+        <text 
         x="27" 
         y="35" 
         textAnchor="middle" 
@@ -82,7 +83,7 @@ const BatteryIcon = ({ level = 65 }) => {
         fontSize="12" 
         fontWeight="bold"
       >
-        {Math.round(level)}%
+        {showValue ? `${Math.round(level)}%` : ''}
       </text>
     </svg>
   );
@@ -204,6 +205,7 @@ const EnergieFlussVisualisierung = () => {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hasData, setHasData] = useState(false);
 
   // API-Endpoint - Passe diese URL an deine API an
   const API_URL = '/api/inverter/summary';
@@ -232,10 +234,12 @@ const EnergieFlussVisualisierung = () => {
           netzBezug: Math.max(0, (data.house_consumption || 0) - (data.ppv || 0) - (data.pbattery || 0))
         });
         
+        setHasData(true);
         setLoading(false);
         setError(null);
       } catch (err) {
         console.error('Fehler beim Laden der Energiedaten:', err);
+        setHasData(false);
         setError(err instanceof Error ? err.message : String(err));
         setLoading(false);
       }
@@ -301,67 +305,6 @@ const EnergieFlussVisualisierung = () => {
     );
   };
 
-  if (loading) {
-    return (
-      <div style={{
-        minHeight: '100vh',
-        background: 'linear-gradient(to bottom right, #f8fafc, #e2e8f0)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center'
-      }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{
-            width: '50px',
-            height: '50px',
-            border: '5px solid #e2e8f0',
-            borderTop: '5px solid #3b82f6',
-            borderRadius: '50%',
-            animation: 'spin 1s linear infinite',
-            margin: '0 auto 1rem'
-          }}></div>
-          <p style={{ color: '#64748b' }}>Lade Energiedaten...</p>
-        </div>
-        <style>{`
-          @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-          }
-        `}</style>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div style={{
-        minHeight: '100vh',
-        background: 'linear-gradient(to bottom right, #f8fafc, #e2e8f0)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '2rem'
-      }}>
-        <div style={{
-          background: 'white',
-          borderRadius: '0.5rem',
-          padding: '2rem',
-          boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
-          maxWidth: '500px',
-          textAlign: 'center'
-        }}>
-          <h2 style={{ color: '#ef4444', marginBottom: '1rem', fontSize: '1.5rem' }}>
-            Fehler beim Laden der Daten
-          </h2>
-          <p style={{ color: '#64748b', marginBottom: '1rem' }}>{error}</p>
-          <p style={{ color: '#64748b', fontSize: '0.875rem' }}>
-            Bitte prüfe die API-URL in der Komponente : <code>{API_URL}</code>
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div style={{
       minHeight: '100vh',
@@ -369,22 +312,14 @@ const EnergieFlussVisualisierung = () => {
       padding: '2rem'
     }}>
       <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
-        <h1 style={{
-          fontSize: '2.25rem',
-          fontWeight: 'bold',
-          color: '#1e293b',
-          marginBottom: '0.5rem',
-          textAlign: 'center'
-        }}>
-          Live Energiefluss 
-        </h1>
-        <p style={{
-          color: '#64748b',
-          textAlign: 'center',
-          marginBottom: '2rem'
-        }}>
-          Live-Darstellung der Energieströme
-        </p>
+        <PageHeader
+          eyebrow="PV-SYSTEM"
+          title="PV Energiefluss"
+          subtitle="Live-Darstellung der Energieströme"
+          status={error ? 'VERBINDUNG FEHLER' : loading ? 'DATEN WERDEN GELADEN' : 'SYSTEM ONLINE'}
+          statusDetail={error ? 'Energiefluss-Datenquelle nicht erreichbar' : 'Inverter-Daten werden überwacht'}
+          statusMessage={error ? `Fehler beim Laden der Daten: ${error}` : undefined}
+        />
 
         <svg width="600" height="600" style={{ display: 'block', margin: '0 auto' }}>
         {/* PV-Anlage */}
@@ -409,13 +344,13 @@ const EnergieFlussVisualisierung = () => {
             <animate attributeName="stroke-opacity" values="0.6;0.8;0.6" dur="2s" repeatCount="indefinite"/>
           </circle>
             <g transform="translate(5, 5)scale(0.15)" style={{ color: '#181515' }}>
-              <BatteryIcon level={energieFluss.batterieStand} />
+              <BatteryIcon level={energieFluss.batterieStand} showValue={hasData} />
             </g>
             <text x="50" y="115" textAnchor="middle" fill="#334155" fontWeight="600">
               Batterie
             </text>
             <text x="50" y="135" textAnchor="middle" fill="#3b82f6" fontWeight="bold" fontSize="18">
-              {energieFluss.batterieStand.toFixed()}%
+              {hasData ? `${energieFluss.batterieStand.toFixed()}%` : '—'}
             </text>
           </g>
 
@@ -431,7 +366,7 @@ const EnergieFlussVisualisierung = () => {
               Haus
             </text>
             <text x="50" y="135" textAnchor="middle" fill="#8b5cf6" fontWeight="bold" fontSize="18">
-              {(energieFluss.hausVerbrauch / 1000).toFixed(1)} kW
+              {hasData ? `${(energieFluss.hausVerbrauch / 1000).toFixed(1)} kW` : '—'}
             </text>
           </g>
 
@@ -447,7 +382,7 @@ const EnergieFlussVisualisierung = () => {
               Enyaq Coupé
             </text>
             <text x="50" y="135" textAnchor="middle" fill="#1a1a1a" fontWeight="bold" fontSize="18">
-              {energieFluss.autoLaden > 0 ? `${(energieFluss.autoLaden / 1000).toFixed(1)} kW` : 'Standby'}
+              {hasData ? (energieFluss.autoLaden > 0 ? `${(energieFluss.autoLaden / 1000).toFixed(1)} kW` : 'Standby') : '—'}
             </text>
           </g>
 
@@ -463,11 +398,11 @@ const EnergieFlussVisualisierung = () => {
               Netz
             </text>
             <text x="50" y="138" textAnchor="middle" fill={energieFluss.netzEinspeisung > 0 ? '#10b981' : '#ef4444'} fontWeight="bold" fontSize="18">
-              {energieFluss.netzEinspeisung > 0 
+              {hasData && energieFluss.netzEinspeisung > 0 
                 ? `↑ ${(energieFluss.netzEinspeisung / 1000).toFixed(1)} kW`
-                : energieFluss.netzBezug > 0 
+                : hasData && energieFluss.netzBezug > 0 
                   ? `↓ ${(energieFluss.netzBezug / 1000).toFixed(1)} kW`
-                  : '0 kW'}
+                  : '—'}
             </text>
           </g>
 
@@ -475,46 +410,46 @@ const EnergieFlussVisualisierung = () => {
           <FlussLinie 
             von="pv" 
             nach="batterie" 
-            aktiv={energieFluss.batterieLaden > 0} 
+            aktiv={hasData && energieFluss.batterieLaden > 0} 
             leistung={energieFluss.batterieLaden}
           />
           <FlussLinie 
             von="pv" 
             nach="haus" 
-            aktiv={energieFluss.pvProduktion > 0} 
+            aktiv={hasData && energieFluss.pvProduktion > 0} 
             leistung={Math.min(energieFluss.pvProduktion, energieFluss.hausVerbrauch)}
           />
           <FlussLinie 
             von="haus" 
             nach="auto" 
-            aktiv={energieFluss.autoLaden > 0} 
+            aktiv={hasData && energieFluss.autoLaden > 0} 
             leistung={energieFluss.autoLaden}
             farbe="red"
           />
           <FlussLinie 
             von="batterie" 
             nach="pv" 
-            aktiv={energieFluss.batterieEntladen > 0} 
+            aktiv={hasData && energieFluss.batterieEntladen > 0} 
             leistung={energieFluss.batterieEntladen}
             farbe="red"
           />
           <FlussLinie 
             von="batterie" 
             nach="haus" 
-            aktiv={energieFluss.batterieEntladen > 0} 
+            aktiv={hasData && energieFluss.batterieEntladen > 0} 
             leistung={energieFluss.batterieEntladen}
             farbe="red"
           />
           <FlussLinie 
             von="haus" 
             nach="netz" 
-            aktiv={energieFluss.netzEinspeisung > 0} 
+            aktiv={hasData && energieFluss.netzEinspeisung > 0} 
             leistung={energieFluss.netzEinspeisung}
           />
           <FlussLinie 
             von="netz" 
             nach="haus" 
-            aktiv={energieFluss.netzBezug > 0} 
+            aktiv={hasData && energieFluss.netzBezug > 0} 
             leistung={energieFluss.netzBezug}
             farbe="red"
           />
@@ -529,35 +464,35 @@ const EnergieFlussVisualisierung = () => {
           <div style={{ background: 'white', borderRadius: '0.5rem', padding: '1rem', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
             <div style={{ color: '#64748b', fontSize: '0.875rem', marginBottom: '0.25rem' }}>PV-Produktion</div>
             <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#10b981' }}>
-              {(energieFluss.pvProduktion / 1000).toFixed(1)} kW
+              {hasData ? `${(energieFluss.pvProduktion / 1000).toFixed(1)} kW` : '—'}
             </div>
           </div>
           <div style={{ background: 'white', borderRadius: '0.5rem', padding: '1rem', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
             <div style={{ color: '#64748b', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Hausverbrauch</div>
             <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#8b5cf6' }}>
-              {(energieFluss.hausVerbrauch / 1000).toFixed(1)} kW
+              {hasData ? `${(energieFluss.hausVerbrauch / 1000).toFixed(1)} kW` : '—'}
             </div>
           </div>
           <div style={{ background: 'white', borderRadius: '0.5rem', padding: '1rem', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
             <div style={{ color: '#64748b', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Batteriestand</div>
             <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#3b82f6' }}>
-              {energieFluss.batterieStand.toFixed(0)}%
+              {hasData ? `${energieFluss.batterieStand.toFixed(0)}%` : '—'}
             </div>
           </div>
           <div style={{ background: 'white', borderRadius: '0.5rem', padding: '1rem', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
             <div style={{ color: '#64748b', fontSize: '0.875rem', marginBottom: '0.25rem' }}>E-Auto</div>
             <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#ec4899' }}>
-              {(energieFluss.autoLaden / 1000).toFixed(1)} kW
+              {hasData ? `${(energieFluss.autoLaden / 1000).toFixed(1)} kW` : '—'}
             </div>
           </div>
           <div style={{ background: 'white', borderRadius: '0.5rem', padding: '1rem', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
             <div style={{ color: '#64748b', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Netzbilanz</div>
             <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: energieFluss.netzEinspeisung > 0 ? '#10b981' : '#ef4444' }}>
-              {energieFluss.netzEinspeisung > 0 
+              {hasData && energieFluss.netzEinspeisung > 0 
                 ? `+${(energieFluss.netzEinspeisung / 1000).toFixed(1)} kW`
-                : energieFluss.netzBezug > 0 
+                : hasData && energieFluss.netzBezug > 0 
                   ? `-${(energieFluss.netzBezug / 1000).toFixed(1)} kW`
-                  : '0 kW'}
+                  : '—'}
             </div>
           </div>
         </div>

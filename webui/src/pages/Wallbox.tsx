@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { LineChartCard } from '../components/Charts'
+import PageHeader from '../components/PageHeader'
 
 type WallboxStatus = {
   amp?: number
@@ -44,7 +45,7 @@ export default function Wallbox() {
 
   return (
     <div>
-      <h1>Wallbox</h1>
+      <PageHeader eyebrow="GO-ECHARGER" title="Wallbox" subtitle="Ladezustand und Ladeverlauf" />
       {err && <div style={{background:'#fff3cd', border:'1px solid #ffeeba', color:'#856404', padding:10, borderRadius:6, margin:'8px 0'}}>{err}</div>}
       <Cards status={status} />
       <div style={{marginTop:16}}>

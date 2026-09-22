@@ -45,6 +45,23 @@ Implementation preferences:
 - When adding persisted fields, update load + persist + API GET/PUT paths consistently.
 - Keep MQTT topic naming and payload format stable unless explicitly requested otherwise.
 
+Global frontend visual structure:
+- Every page owns and renders its own `PageHeader` instance; do not render one generic page header globally from `App.tsx`.
+- Keep each page header's values page-specific: provide the actual data-origin or owning system as the eyebrow, plus the correct title, contextual subtitle, data-source status, status detail, actions, and supported local tabs for that page.
+- Never use a generic `ETA WEBOBERFLÄCHE` eyebrow across pages. The eyebrow must identify the page's data origin or owning system, such as `WEATHER UNDERGROUND`, `ŠKODA CONNECT`, `GO-ECHARGER`, `GRAFANA`, `ETA HEIZSYSTEM`, `MQTT / HÜHNERKLAPPE`, or `SYSTEM UPDATE`.
+- Apply general header changes automatically to every page-specific `PageHeader` usage, including existing pages and all future pages. When adding a new page, add its own `PageHeader` at the page root and wire its specific actions and tabs through props.
+- Treat the WeatherStation header as the default design contract: dark blue `#263d52` header, Georgia title at 30px, compact status strip, and page actions inside the header.
+- Use the shared `pageHeaderButtonStyle` for header actions by default: 3px radius, `9px 13px` padding, bold compact text, and WeatherStation white/transparent button variants. Do not introduce page-specific button geometry or green/rounded alternatives unless explicitly requested.
+- Use the established blue top-header structure as the default visual pattern for every frontend page, including all existing pages and every future page.
+- The blue header must be the first page-level visual signal and should contain the page or product title, the relevant contextual subtitle, and page actions such as refresh or settings where applicable. Actions belong inside that page's blue header, not beside it on the page background.
+- Keep a compact, always-visible status strip directly inside the blue header below the title area. It must show the current state of the page's data source or device, using neutral default values when live data is unavailable.
+- Place page-local navigation or view tabs at the bottom of the blue header. Only include tabs that are supported by the page; do not add placeholder sections such as radar, satellite, calendar, history, or map views when they are not implemented.
+- ETA heating exception: keep the ETA header as a separate block without a yellow outline or an extra ETA label, render the page tabs and view controls such as Play and View together in the lower ETA device block, and keep the first tab flush at the block start. Reserve the blue header action area for page-local settings and refresh/update actions when those actions exist.
+- Treat `Weather.tsx` as the visual reference and preserve its existing implementation unless the user explicitly requests a WeatherStation change; general header improvements must still be reflected in the shared `PageHeader` and all other page-owned headers.
+- Keep the visual language consistent across pages: dark blue header, restrained white content area, compact bordered panels, red accent for the active tab or primary emphasis, and responsive wrapping on narrow screens.
+- Preserve the existing application sidebar and page functionality unless the user explicitly requests a navigation redesign. The blue header is the shared page header within that shell.
+- Prefer extracting a reusable shared header/status component when multiple pages need the same structure, while keeping page-specific data and actions in the owning page.
+
 REST architecture rules:
 - Keep all HTTP API handler implementations for the REST service in `api-go/rest/api_handlers.go`.
 - Keep domain state, polling, MQTT integration, persistence, and transformation logic in their respective REST/domain files; handlers should call those existing APIs rather than duplicating that logic.
