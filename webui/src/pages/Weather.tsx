@@ -45,6 +45,8 @@ type WeatherResponse = {
   configured: boolean
 }
 
+type WeatherTab = 'today' | 'hourly' | 'tenDay'
+
 const initialSettings: WeatherSettings = {
   stationId: 'IRIEDE66',
   apiKey: '',
@@ -63,6 +65,34 @@ function formatTime(value?: string) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString('de-DE')
 }
 
+function createDefaultObservation(stationId: string): Observation {
+  return {
+    stationId,
+    stationName: 'Persönliche Wetterstation',
+    observedAt: '',
+    temperature: 0,
+    feelsLike: 0,
+    humidity: 0,
+    windSpeed: 0,
+    windGust: 0,
+    windDirection: '—',
+    pressure: 0,
+    dewPoint: 0,
+    precipRate: 0,
+    precipTotal: 0,
+    uv: 0,
+    solarRadiation: 0,
+    latitude: 0,
+    longitude: 0,
+    elevation: 0,
+    temperatureUnit: '°C',
+    windUnit: 'km/h',
+    pressureUnit: 'hPa',
+    precipUnit: 'mm',
+    updatedAt: '',
+  }
+}
+
 export default function Weather() {
   const [data, setData] = useState<WeatherResponse | null>(null)
   const [settings, setSettings] = useState<WeatherSettings>(initialSettings)
@@ -70,6 +100,7 @@ export default function Weather() {
   const [saving, setSaving] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [message, setMessage] = useState('')
+  const [activeTab, setActiveTab] = useState<WeatherTab>('today')
 
   const loadStatus = async () => {
     try {
@@ -121,65 +152,93 @@ export default function Weather() {
   }
 
   const observation = data?.observation
-  const accent = '#0f766e'
+  const displayObservation = observation ?? createDefaultObservation(settings.stationId)
+  const accent = '#d7463f'
   const panel: CSSProperties = {
-    background: 'rgba(255,255,255,0.92)',
-    border: '1px solid #dbe4e5',
-    borderRadius: 14,
-    boxShadow: '0 10px 30px rgba(15, 59, 64, 0.08)',
+    background: '#fff',
+    border: '1px solid #d9e0e5',
+    borderRadius: 4,
+    boxShadow: '0 3px 12px rgba(27, 49, 67, 0.08)',
   }
 
   return (
-    <div style={{ maxWidth: 1180, margin: '0 auto', color: '#20343a' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 22 }}>
-        <div>
-          <div style={{ color: accent, fontSize: 12, fontWeight: 800, letterSpacing: 1.5, textTransform: 'uppercase' }}>Personal Weather Station</div>
-          <h1 style={{ margin: '6px 0 4px', fontSize: 34 }}>Wetterstation {settings.stationId}</h1>
-          <p style={{ margin: 0, color: '#6a7b80' }}>{observation?.stationName || 'Weather Underground Station Dashboard'}</p>
+    <div style={{ maxWidth: 1240, margin: '0 auto', color: '#273746', fontFamily: 'Georgia, "Times New Roman", serif' }}>
+      <div style={{ background: '#263d52', color: '#fff', margin: '-20px -20px 20px', padding: '18px 24px 0', boxShadow: '0 2px 8px rgba(21, 39, 53, 0.18)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ color: '#d8e3eb', fontFamily: 'Arial, sans-serif', fontSize: 12, fontWeight: 700, letterSpacing: 1.4, textTransform: 'uppercase' }}>Weather Underground</div>
+            <h1 style={{ margin: '5px 0 3px', fontSize: 30, fontWeight: 500 }}>Jachenhausen</h1>
+            <p style={{ margin: 0, color: '#bfccd6', fontFamily: 'Arial, sans-serif', fontSize: 13 }}>{observation?.stationName || `Persönliche Wetterstation ${settings.stationId}`}</p>
+          </div>
+          <div style={{ display: 'flex', gap: 8, fontFamily: 'Arial, sans-serif' }}>
+            <button type="button" onClick={refresh} disabled={refreshing} style={{ ...buttonStyle('#fff', '#263d52'), borderColor: '#fff', opacity: refreshing ? 0.6 : 1 }}>↻ Aktualisieren</button>
+            <button type="button" onClick={() => setSettingsOpen(true)} style={{ ...buttonStyle('transparent', '#fff'), borderColor: '#91a6b7' }}>⚙ Einstellungen</button>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button type="button" onClick={refresh} disabled={refreshing} style={{ ...buttonStyle('#e5f3f0', accent), opacity: refreshing ? 0.6 : 1 }}>↻ Aktualisieren</button>
-          <button type="button" onClick={() => setSettingsOpen(true)} style={buttonStyle(accent, '#fff')}>⚙ Einstellungen</button>
+        <StationStatusBar observation={displayObservation} configured={Boolean(data?.configured)} lastFetchAt={data?.lastFetchAt} />
+        <div role="tablist" aria-label="Wetteransichten" style={{ display: 'flex', gap: 0, marginTop: 20, fontFamily: 'Arial, sans-serif', fontSize: 13 }}>
+          <WeatherTabButton active={activeTab === 'today'} onClick={() => setActiveTab('today')}>TODAY</WeatherTabButton>
+          <WeatherTabButton active={activeTab === 'hourly'} onClick={() => setActiveTab('hourly')}>HOURLY FORECAST</WeatherTabButton>
+          <WeatherTabButton active={activeTab === 'tenDay'} onClick={() => setActiveTab('tenDay')}>10-DAY FORECAST</WeatherTabButton>
         </div>
       </div>
 
-      {message && <div style={{ ...panel, padding: '12px 16px', marginBottom: 16, color: accent }}>{message}</div>}
-      {data?.error && <div style={{ ...panel, padding: '14px 16px', marginBottom: 16, borderColor: '#f0caca', color: '#a33a3a' }}>{data.error}</div>}
-
-      {!data?.configured ? (
-        <div style={{ ...panel, padding: 34, textAlign: 'center' }}>
-          <div style={{ fontSize: 42, marginBottom: 10 }}>☁</div>
-          <h2 style={{ margin: '0 0 8px' }}>Wetterstation einrichten</h2>
-          <p style={{ color: '#6a7b80', margin: '0 0 18px' }}>Station-ID und Weather-Underground-API-Key werden einmalig in den Einstellungen hinterlegt.</p>
-          <button type="button" onClick={() => setSettingsOpen(true)} style={buttonStyle(accent, '#fff')}>Einstellungen öffnen</button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14, fontFamily: 'Arial, sans-serif' }}>
+        <div>
+          <div style={{ color: '#768797', fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase' }}>Persönliche Wetterstation</div>
+          <div style={{ marginTop: 3, color: '#526575', fontSize: 14 }}>Station {settings.stationId} · {formatTime(observation?.observedAt)}</div>
         </div>
-      ) : observation ? (
+      </div>
+
+      {message && <div style={{ ...panel, padding: '12px 16px', marginBottom: 16, color: '#2f6374', fontFamily: 'Arial, sans-serif' }}>{message}</div>}
+      {data?.error && <div style={{ ...panel, padding: '14px 16px', marginBottom: 16, borderColor: '#efb8b4', color: '#a43835', fontFamily: 'Arial, sans-serif' }}>{data.error}</div>}
+
+      {activeTab === 'today' ? (
         <>
-          <section style={{ ...panel, padding: 22, background: 'linear-gradient(135deg, #e9f6f4 0%, #ffffff 62%)', display: 'grid', gridTemplateColumns: 'minmax(240px, 1.2fr) repeat(3, minmax(130px, 1fr))', gap: 18, alignItems: 'center' }}>
-            <div>
-              <div style={{ color: '#6a7b80', fontSize: 13 }}>Aktuelle Bedingungen</div>
-              <div style={{ fontSize: 64, lineHeight: 1, fontWeight: 800, color: '#123f45', margin: '8px 0' }}>{formatNumber(observation.temperature)}{observation.temperatureUnit}</div>
-              <div style={{ color: '#567177' }}>Gefühlt {formatNumber(observation.feelsLike)}{observation.temperatureUnit} · aktualisiert {formatTime(observation.observedAt)}</div>
+          <section style={{ ...panel, padding: '26px 28px 22px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 26, alignItems: 'center', background: '#fff' }}>
+            <div style={{ display: 'flex', justifyContent: 'center' }}>
+              <div style={{ width: 190, height: 190, borderRadius: '50%', border: '5px solid #62b94f', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#263d52', fontFamily: 'Arial, sans-serif' }}>
+                <div style={{ color: '#607382', fontSize: 16, marginBottom: 4 }}>—° <span style={{ color: '#b8c1c7' }}>|</span> {formatNumber(displayObservation.feelsLike, 0)}°</div>
+                <div style={{ color: '#69b82f', fontSize: 76, lineHeight: 0.95, fontWeight: 400 }}>{formatNumber(displayObservation.temperature, 0)}<span style={{ fontSize: 28, verticalAlign: 'top', marginLeft: 3 }}>{displayObservation.temperatureUnit}</span></div>
+                <div style={{ color: '#263d52', fontSize: 15, marginTop: 8 }}>LIKE {formatNumber(displayObservation.feelsLike, 0)}°</div>
+              </div>
             </div>
-            <Metric label="Luftfeuchte" value={`${formatNumber(observation.humidity, 0)} %`} />
-            <Metric label="Taupunkt" value={`${formatNumber(observation.dewPoint)}${observation.temperatureUnit}`} />
-            <Metric label="UV-Index" value={formatNumber(observation.uv, 0)} />
+            <div style={{ display: 'grid', justifyItems: 'center', gap: 14, fontFamily: 'Arial, sans-serif' }}>
+              <div style={{ color: '#263d52', fontSize: 70, lineHeight: 0.8, fontFamily: 'Georgia, "Times New Roman", serif' }}>☾</div>
+              <div style={{ color: '#263d52', fontSize: 14 }}>Aktuelle Bedingungen</div>
+              <div style={{ width: 62, height: 62, border: '3px solid #8d959a', borderRadius: '50%', display: 'grid', placeItems: 'center', color: '#263d52', fontWeight: 700, position: 'relative' }}>
+                <span style={{ position: 'absolute', top: 5, fontSize: 11 }}>N</span>
+                <span>{displayObservation.windDirection || '0'}</span>
+              </div>
+              <div style={{ color: '#607382', fontSize: 13 }}>{formatNumber(displayObservation.windSpeed)} {displayObservation.windUnit}</div>
+            </div>
           </section>
 
-          <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 14, marginTop: 16 }}>
-            <MetricCard title="Wind & Böen" value={`${formatNumber(observation.windSpeed)} ${observation.windUnit}`} detail={`${observation.windDirection || '—'} · Böen ${formatNumber(observation.windGust)} ${observation.windUnit}`} />
-            <MetricCard title="Luftdruck" value={`${formatNumber(observation.pressure)} ${observation.pressureUnit}`} detail={`Station ${observation.stationId}`} />
-            <MetricCard title="Niederschlag" value={`${formatNumber(observation.precipRate)} ${observation.precipUnit}/h`} detail={`Summe ${formatNumber(observation.precipTotal)} ${observation.precipUnit}`} />
-            <MetricCard title="Solarstrahlung" value={`${formatNumber(observation.solarRadiation, 0)} W/m²`} detail={`Höhe ${formatNumber(observation.elevation, 0)} m`} />
+          <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 0, marginTop: 14, ...panel, overflow: 'hidden' }}>
+            <Metric label="Luftfeuchte" value={`${formatNumber(displayObservation.humidity, 0)} %`} />
+            <Metric label="Taupunkt" value={`${formatNumber(displayObservation.dewPoint)}${displayObservation.temperatureUnit}`} />
+            <Metric label="UV-Index" value={formatNumber(displayObservation.uv, 0)} />
+            <Metric label="Luftdruck" value={`${formatNumber(displayObservation.pressure)} ${displayObservation.pressureUnit}`} />
           </section>
 
-          <section style={{ ...panel, marginTop: 16, padding: 18, display: 'flex', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', color: '#6a7b80', fontSize: 13 }}>
-            <span>Koordinaten {formatNumber(observation.latitude, 3)}° N · {formatNumber(observation.longitude, 3)}° E</span>
-            <span>Letzter Abruf: {formatTime(data.lastFetchAt)}</span>
+          <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 12, marginTop: 14 }}>
+            <MetricCard title="Wind & Böen" value={`${formatNumber(displayObservation.windSpeed)} ${displayObservation.windUnit}`} detail={`${displayObservation.windDirection || '—'} · Böen ${formatNumber(displayObservation.windGust)} ${displayObservation.windUnit}`} />
+            <MetricCard title="Luftdruck" value={`${formatNumber(displayObservation.pressure)} ${displayObservation.pressureUnit}`} detail={`Station ${displayObservation.stationId}`} />
+            <MetricCard title="Niederschlag" value={`${formatNumber(displayObservation.precipRate)} ${displayObservation.precipUnit}/h`} detail={`Summe ${formatNumber(displayObservation.precipTotal)} ${displayObservation.precipUnit}`} />
+            <MetricCard title="Solarstrahlung" value={`${formatNumber(displayObservation.solarRadiation, 0)} W/m²`} detail={`Höhe ${formatNumber(displayObservation.elevation, 0)} m`} />
+          </section>
+
+          <section style={{ ...panel, marginTop: 14, padding: 15, display: 'flex', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', color: '#6a7b80', fontFamily: 'Arial, sans-serif', fontSize: 12 }}>
+            <span>Koordinaten {formatNumber(displayObservation.latitude, 3)}° N · {formatNumber(displayObservation.longitude, 3)}° E</span>
+            <span>Letzter Abruf: {formatTime(data?.lastFetchAt)}</span>
           </section>
         </>
+      ) : activeTab === 'hourly' ? (
+        <ForecastUnavailable title="Hourly Forecast" observation={displayObservation} />
+      ) : activeTab === 'tenDay' ? (
+        <ForecastUnavailable title="10-Day Forecast" observation={displayObservation} />
       ) : (
-        <div style={{ ...panel, padding: 32, textAlign: 'center', color: '#6a7b80' }}>Wetterdaten werden geladen …</div>
+        <div style={{ ...panel, padding: 32, textAlign: 'center', color: '#6a7b80', fontFamily: 'Arial, sans-serif' }}>Keine Wetteransicht ausgewählt.</div>
       )}
 
       {settingsOpen && <SettingsModal settings={settings} setSettings={setSettings} saving={saving} onClose={() => setSettingsOpen(false)} onSave={saveSettings} />}
@@ -187,16 +246,48 @@ export default function Weather() {
   )
 }
 
+function WeatherTabButton({ active, children, onClick }: { active: boolean; children: string; onClick: () => void }) {
+  return <button type="button" role="tab" aria-selected={active} onClick={onClick} style={{ border: 0, borderTop: active ? '3px solid #d7463f' : '3px solid transparent', borderLeft: '1px solid rgba(255,255,255,0.08)', background: active ? '#fff' : 'transparent', color: active ? '#263d52' : '#bdcbd5', padding: '12px 20px 11px', fontWeight: 700, cursor: 'pointer' }}>{children}</button>
+}
+
+function StationStatusBar({ observation, configured, lastFetchAt }: { observation?: Observation; configured: boolean; lastFetchAt?: string }) {
+  return <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap', marginTop: 18, padding: '11px 0 2px', borderTop: '1px solid rgba(216, 227, 235, 0.22)', fontFamily: 'Arial, sans-serif', fontSize: 13 }}>
+    <span style={{ color: configured ? '#fff' : '#ffcfca', fontWeight: 700 }}>{configured ? 'STATION ONLINE' : 'STATION NICHT EINGERICHTET'}</span>
+    {observation ? <>
+      <span style={{ color: '#fff', fontSize: 22, fontWeight: 700 }}>{formatNumber(observation.temperature)}{observation.temperatureUnit}</span>
+      <span style={{ color: '#c5d2dc' }}>Gefühlt {formatNumber(observation.feelsLike)}{observation.temperatureUnit}</span>
+      <span style={{ color: '#c5d2dc' }}>Feuchte {formatNumber(observation.humidity, 0)} %</span>
+      <span style={{ color: '#c5d2dc' }}>Wind {formatNumber(observation.windSpeed)} {observation.windUnit}</span>
+      <span style={{ color: '#9fb1bf', marginLeft: 'auto' }}>Update {formatTime(lastFetchAt || observation.updatedAt)}</span>
+    </> : <span style={{ color: '#c5d2dc' }}>Noch keine Messdaten verfügbar</span>}
+  </div>
+}
+
+function ForecastUnavailable({ title, observation }: { title: string; observation: Observation }) {
+  return <section style={{ background: '#fff', border: '1px solid #d9e0e5', borderRadius: 4, boxShadow: '0 3px 12px rgba(27, 49, 67, 0.08)', fontFamily: 'Arial, sans-serif' }}>
+    <div style={{ padding: '14px 18px', background: '#eef1f3', borderBottom: '1px solid #d9e0e5', color: '#263d52', fontSize: 14, fontWeight: 700 }}>{title}</div>
+    <div style={{ padding: 28, textAlign: 'center' }}>
+      <div style={{ color: '#263d52', fontFamily: 'Georgia, "Times New Roman", serif', fontSize: 26, marginBottom: 8 }}>Forecast data unavailable</div>
+      <p style={{ maxWidth: 560, margin: '0 auto 22px', color: '#687b8a', lineHeight: 1.6 }}>Die angebundene Personal Weather Station liefert aktuell Messwerte, aber keine Stunden- oder 10-Tage-Prognose.</p>
+      <div style={{ display: 'inline-flex', gap: 26, flexWrap: 'wrap', justifyContent: 'center', padding: '14px 20px', background: '#f7f9fa', border: '1px solid #e1e7eb', color: '#526575', fontSize: 13 }}>
+        <span>Aktuell <strong>{formatNumber(observation.temperature)}{observation.temperatureUnit}</strong></span>
+        <span>Gefühlt <strong>{formatNumber(observation.feelsLike)}{observation.temperatureUnit}</strong></span>
+        <span>Feuchte <strong>{formatNumber(observation.humidity, 0)} %</strong></span>
+      </div>
+    </div>
+  </section>
+}
+
 function buttonStyle(background: string, color: string): CSSProperties {
-  return { border: '1px solid #b7d7d2', borderRadius: 9, background, color, padding: '10px 14px', fontWeight: 800, cursor: 'pointer' }
+  return { border: '1px solid #b7d7d2', borderRadius: 3, background, color, padding: '9px 13px', fontWeight: 800, cursor: 'pointer' }
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
-  return <div><div style={{ color: '#6a7b80', fontSize: 12, marginBottom: 6 }}>{label}</div><div style={{ fontSize: 25, fontWeight: 800, color: '#1d4e55' }}>{value}</div></div>
+  return <div style={{ flex: '1 1 130px', padding: '22px 16px', borderLeft: '1px solid #e1e7eb', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}><div style={{ color: '#718392', fontFamily: 'Arial, sans-serif', fontSize: 12, marginBottom: 9 }}>{label}</div><div style={{ fontSize: 24, fontWeight: 700, color: '#304c62' }}>{value}</div></div>
 }
 
 function MetricCard({ title, value, detail }: { title: string; value: string; detail: string }) {
-  return <div style={{ background: '#fff', border: '1px solid #dbe4e5', borderRadius: 14, padding: 18, boxShadow: '0 7px 20px rgba(15, 59, 64, 0.06)' }}><div style={{ color: '#6a7b80', fontSize: 13, fontWeight: 700 }}>{title}</div><div style={{ color: '#203f45', fontSize: 25, fontWeight: 800, margin: '10px 0 6px' }}>{value}</div><div style={{ color: '#71858a', fontSize: 13 }}>{detail}</div></div>
+  return <div style={{ background: '#fff', border: '1px solid #d9e0e5', borderRadius: 4, padding: 17, boxShadow: '0 3px 12px rgba(27, 49, 67, 0.06)' }}><div style={{ color: '#718392', fontFamily: 'Arial, sans-serif', fontSize: 12, fontWeight: 700, textTransform: 'uppercase' }}>{title}</div><div style={{ color: '#304c62', fontSize: 24, fontWeight: 700, margin: '10px 0 6px' }}>{value}</div><div style={{ color: '#71858a', fontFamily: 'Arial, sans-serif', fontSize: 12 }}>{detail}</div></div>
 }
 
 function SettingsModal({ settings, setSettings, saving, onClose, onSave }: { settings: WeatherSettings; setSettings: (value: WeatherSettings) => void; saving: boolean; onClose: () => void; onSave: () => void }) {
