@@ -17,7 +17,6 @@ const scheduleActiveTopic = nanoSetPrefix + "/schedule_active"
 const scheduleRetryDelay = 5 * time.Second
 const scheduleHistorySize = 20
 const defaultScheduleTimezone = "Europe/Berlin"
-const scheduleEarlyWakeTolerance = 2 * time.Minute
 
 var scheduleLocation = struct {
 	once sync.Once
@@ -351,21 +350,21 @@ func (h *ChickenDoor) executeScheduleAction(action string) {
 
 // @brief Classifies whether a controller wake occurred before its planned time.
 // @param onlineTs Timestamp at which the controller became online.
-// @return before-planned flag, tolerance flag, and lead duration.
-func (h *ChickenDoor) classifyWakeTiming(onlineTs time.Time) (bool, bool, time.Duration) {
+// @return before-planned flag and lead duration.
+func (h *ChickenDoor) classifyWakeTiming(onlineTs time.Time) (bool, time.Duration) {
 	if onlineTs.IsZero() || len(h.scheduleHistory) == 0 {
-		return false, false, 0
+		return false, 0
 	}
 	last := h.scheduleHistory[len(h.scheduleHistory)-1]
 	if last.SleepCommandAtMs <= 0 || last.SleepSeconds <= 0 {
-		return false, false, 0
+		return false, 0
 	}
 	plannedWake := time.UnixMilli(last.SleepCommandAtMs).Add(time.Duration(last.SleepSeconds) * time.Second)
 	if !onlineTs.Before(plannedWake) {
-		return false, false, 0
+		return false, 0
 	}
 	lead := plannedWake.Sub(onlineTs)
-	return true, lead <= scheduleEarlyWakeTolerance, lead
+	return true, lead
 }
 
 // @brief Updates sleep/online transition timestamps and arms schedule wake handling.
@@ -410,18 +409,17 @@ func (h *ChickenDoor) updateStateTracking(controllerState, sleepState string, st
 			}
 		}
 		if h.scheduleActive {
-			beforePlanned, withinTolerance, lead := h.classifyWakeTiming(stateTs)
-			if beforePlanned && !withinTolerance {
+			beforePlanned, lead := h.classifyWakeTiming(stateTs)
+			if beforePlanned {
+				if n := len(h.scheduleHistory); n > 0 {
+					h.scheduleHistory[n-1].EndPosition = "wait"
+				}
 				h.scheduleSleepPending = true
 				h.scheduleWakeAt = time.Now()
-				log.Printf("[chickendoor-schedule] early wake outside tolerance (%s) -> skip action, schedule sleep until planned wake", lead.Round(time.Second))
+				log.Printf("[chickendoor-schedule] early wake (%s) -> skip action, schedule sleep until planned wake", lead.Round(time.Second))
 			} else {
 				h.scheduleWakeAt = time.Now()
-				if beforePlanned {
-					log.Printf("[chickendoor-schedule] early wake within tolerance (%s) -> execute normal action", lead.Round(time.Second))
-				} else {
-					log.Printf("[chickendoor-schedule] wake on/after planned time -> execute normal action")
-				}
+				log.Printf("[chickendoor-schedule] wake on/after planned time -> execute normal action")
 			}
 		}
 	}
