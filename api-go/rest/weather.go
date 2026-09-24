@@ -71,13 +71,14 @@ type WeatherObservation struct {
 
 // WeatherResponse is returned by the weather status endpoint.
 type WeatherResponse struct {
-	Settings    WeatherSettings     `json:"settings"`
-	Observation *WeatherObservation `json:"observation,omitempty"`
-	Forecast    []HourlyForecast    `json:"forecast,omitempty"`
-	SunTimes    []SunTimes          `json:"sunTimes,omitempty"`
-	LastFetchAt string              `json:"lastFetchAt,omitempty"`
-	Error       string              `json:"error,omitempty"`
-	Configured  bool                `json:"configured"`
+	Settings      WeatherSettings     `json:"settings"`
+	Observation   *WeatherObservation `json:"observation,omitempty"`
+	Forecast      []HourlyForecast    `json:"forecast,omitempty"`
+	SunTimes      []SunTimes          `json:"sunTimes,omitempty"`
+	ForecastError string              `json:"forecastError,omitempty"`
+	LastFetchAt   string              `json:"lastFetchAt,omitempty"`
+	Error         string              `json:"error,omitempty"`
+	Configured    bool                `json:"configured"`
 }
 
 // HourlyForecast contains one normalized hourly forecast row for the web UI.
@@ -117,6 +118,7 @@ type WeatherService struct {
 	sunTimesPublisher func([]SunTimes)
 	lastFetchAt       time.Time
 	lastError         string
+	forecastError     string
 	db                *bbolt.DB
 	client            *http.Client
 	ctx               context.Context
@@ -488,6 +490,9 @@ func (s *WeatherService) refresh() {
 	s.lastError = ""
 	if forecastErr == nil {
 		s.forecast = forecast
+		s.forecastError = ""
+	} else {
+		s.forecastError = forecastErr.Error()
 	}
 	if sunTimesErr == nil {
 		s.sunTimes = sunTimes
@@ -859,12 +864,13 @@ func (s *WeatherService) GetStatus() WeatherResponse {
 		observation = &copy
 	}
 	response := WeatherResponse{
-		Settings:    s.settings,
-		Observation: observation,
-		Forecast:    append([]HourlyForecast(nil), s.forecast...),
-		SunTimes:    append([]SunTimes(nil), s.sunTimes...),
-		Configured:  strings.TrimSpace(s.settings.APIKey) != "",
-		Error:       s.lastError,
+		Settings:      s.settings,
+		Observation:   observation,
+		Forecast:      append([]HourlyForecast(nil), s.forecast...),
+		SunTimes:      append([]SunTimes(nil), s.sunTimes...),
+		ForecastError: s.forecastError,
+		Configured:    strings.TrimSpace(s.settings.APIKey) != "",
+		Error:         s.lastError,
 	}
 	if !s.lastFetchAt.IsZero() {
 		response.LastFetchAt = s.lastFetchAt.Format(time.RFC3339)

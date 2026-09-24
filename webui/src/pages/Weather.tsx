@@ -60,6 +60,7 @@ type WeatherResponse = {
   settings: WeatherSettings
   observation?: Observation
   forecast?: HourlyForecast[]
+  forecastError?: string
   lastFetchAt?: string
   error?: string
   configured: boolean
@@ -259,7 +260,7 @@ export default function Weather() {
           </section>
         </>
       ) : activeTab === 'hourly' ? (
-        <HourlyForecastView forecast={data?.forecast ?? []} observation={displayObservation} />
+        <HourlyForecastView forecast={data?.forecast ?? []} observation={displayObservation} configured={Boolean(data?.configured)} forecastError={data?.forecastError} />
       ) : activeTab === 'tenDay' ? (
         <ForecastUnavailable title="10-Tage-Prognose" observation={displayObservation} />
       ) : (
@@ -288,15 +289,18 @@ function StationStatusBar({ observation, configured, lastFetchAt }: { observatio
   </div>
 }
 
-function HourlyForecastView({ forecast, observation }: { forecast: HourlyForecast[]; observation: Observation }) {
+function HourlyForecastView({ forecast, observation, configured, forecastError }: { forecast: HourlyForecast[]; observation: Observation; configured: boolean; forecastError?: string }) {
   return <section style={{ background: '#fff', border: '1px solid #d9e0e5', borderRadius: 4, boxShadow: '0 3px 12px rgba(27, 49, 67, 0.08)', fontFamily: 'Arial, sans-serif', overflow: 'hidden' }}>
     <div style={{ padding: '14px 18px', background: '#eef1f3', borderBottom: '1px solid #d9e0e5', color: '#263d52' }}>
       <div style={{ fontSize: 14, fontWeight: 700 }}>Stündliche Vorhersage</div>
       <div style={{ marginTop: 4, color: '#687b8a', fontSize: 12 }}>Die nächsten 24 Stunden für deine Wetterstation</div>
     </div>
+    {forecastError && <div role="alert" style={{ padding: '12px 18px', borderBottom: '1px solid #efb8b4', background: '#fff5f4', color: '#a43835', fontSize: 13 }}>
+      Abruf der Stundenprognose fehlgeschlagen: {forecastError}
+    </div>}
     {forecast.length === 0 ? <div style={{ padding: 28, textAlign: 'center' }}>
-      <div style={{ color: '#263d52', fontFamily: 'Georgia, "Times New Roman", serif', fontSize: 26, marginBottom: 8 }}>Keine Stundenprognose verfügbar</div>
-      <p style={{ maxWidth: 560, margin: '0 auto 22px', color: '#687b8a', lineHeight: 1.6 }}>Für die Station liegen noch keine Forecast-Daten vor. Aktualisiere die Wetterdaten oder prüfe den API-Key.</p>
+      <div style={{ color: '#263d52', fontFamily: 'Georgia, "Times New Roman", serif', fontSize: 26, marginBottom: 8 }}>{forecastError ? 'Stundenprognose nicht verfügbar' : configured ? 'Stundenprognose wird abgerufen' : 'Wetterdienst nicht eingerichtet'}</div>
+      <p style={{ maxWidth: 560, margin: '0 auto 22px', color: '#687b8a', lineHeight: 1.6 }}>{forecastError ? 'Der Anbieter hat die Stundenprognose nicht geliefert. Die genaue API-Antwort steht oben; der Stationsmesswert kann trotzdem aktuell sein.' : configured ? 'Der Abruf kann wegen des eingestellten API-Anfragelimits einige Minuten dauern. Falls der Forecast-Endpunkt für deinen API-Key nicht freigeschaltet ist, erscheint hier nach dem Abruf die genaue API-Fehlermeldung.' : 'Bitte richte den API-Key in den Wetter-Einstellungen ein.'}</p>
       <div style={{ display: 'inline-flex', gap: 26, flexWrap: 'wrap', justifyContent: 'center', padding: '14px 20px', background: '#f7f9fa', border: '1px solid #e1e7eb', color: '#526575', fontSize: 13 }}>
         <span>Aktuell <strong>{formatNumber(observation.temperature)}{observation.temperatureUnit}</strong></span>
         <span>Gefühlt <strong>{formatNumber(observation.feelsLike)}{observation.temperatureUnit}</strong></span>
