@@ -37,9 +37,29 @@ type Observation = {
   updatedAt: string
 }
 
+type HourlyForecast = {
+  validTime: string
+  condition: string
+  temperature: number
+  feelsLike: number
+  precipChance: number
+  precipAmount: number
+  cloudCover: number
+  dewPoint: number
+  humidity: number
+  windSpeed: number
+  windDirection: string
+  pressure: number
+  temperatureUnit: string
+  windUnit: string
+  pressureUnit: string
+  precipUnit: string
+}
+
 type WeatherResponse = {
   settings: WeatherSettings
   observation?: Observation
+  forecast?: HourlyForecast[]
   lastFetchAt?: string
   error?: string
   configured: boolean
@@ -63,6 +83,11 @@ function formatTime(value?: string) {
   if (!value) return '—'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString('de-DE')
+}
+
+function formatHour(value: string) {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
 }
 
 function createDefaultObservation(stationId: string): Observation {
@@ -177,9 +202,9 @@ export default function Weather() {
         </div>
         <StationStatusBar observation={displayObservation} configured={Boolean(data?.configured)} lastFetchAt={data?.lastFetchAt} />
         <div role="tablist" aria-label="Wetteransichten" style={{ display: 'flex', gap: 0, marginTop: 20, fontFamily: 'Arial, sans-serif', fontSize: 13 }}>
-          <WeatherTabButton active={activeTab === 'today'} onClick={() => setActiveTab('today')}>TODAY</WeatherTabButton>
-          <WeatherTabButton active={activeTab === 'hourly'} onClick={() => setActiveTab('hourly')}>HOURLY FORECAST</WeatherTabButton>
-          <WeatherTabButton active={activeTab === 'tenDay'} onClick={() => setActiveTab('tenDay')}>10-DAY FORECAST</WeatherTabButton>
+          <WeatherTabButton active={activeTab === 'today'} onClick={() => setActiveTab('today')}>HEUTE</WeatherTabButton>
+          <WeatherTabButton active={activeTab === 'hourly'} onClick={() => setActiveTab('hourly')}>STÜNDLICH</WeatherTabButton>
+          <WeatherTabButton active={activeTab === 'tenDay'} onClick={() => setActiveTab('tenDay')}>10 TAGE</WeatherTabButton>
         </div>
       </div>
 
@@ -234,9 +259,9 @@ export default function Weather() {
           </section>
         </>
       ) : activeTab === 'hourly' ? (
-        <ForecastUnavailable title="Hourly Forecast" observation={displayObservation} />
+        <HourlyForecastView forecast={data?.forecast ?? []} observation={displayObservation} />
       ) : activeTab === 'tenDay' ? (
-        <ForecastUnavailable title="10-Day Forecast" observation={displayObservation} />
+        <ForecastUnavailable title="10-Tage-Prognose" observation={displayObservation} />
       ) : (
         <div style={{ ...panel, padding: 32, textAlign: 'center', color: '#6a7b80', fontFamily: 'Arial, sans-serif' }}>Keine Wetteransicht ausgewählt.</div>
       )}
@@ -263,11 +288,47 @@ function StationStatusBar({ observation, configured, lastFetchAt }: { observatio
   </div>
 }
 
+function HourlyForecastView({ forecast, observation }: { forecast: HourlyForecast[]; observation: Observation }) {
+  return <section style={{ background: '#fff', border: '1px solid #d9e0e5', borderRadius: 4, boxShadow: '0 3px 12px rgba(27, 49, 67, 0.08)', fontFamily: 'Arial, sans-serif', overflow: 'hidden' }}>
+    <div style={{ padding: '14px 18px', background: '#eef1f3', borderBottom: '1px solid #d9e0e5', color: '#263d52' }}>
+      <div style={{ fontSize: 14, fontWeight: 700 }}>Stündliche Vorhersage</div>
+      <div style={{ marginTop: 4, color: '#687b8a', fontSize: 12 }}>Die nächsten 24 Stunden für deine Wetterstation</div>
+    </div>
+    {forecast.length === 0 ? <div style={{ padding: 28, textAlign: 'center' }}>
+      <div style={{ color: '#263d52', fontFamily: 'Georgia, "Times New Roman", serif', fontSize: 26, marginBottom: 8 }}>Keine Stundenprognose verfügbar</div>
+      <p style={{ maxWidth: 560, margin: '0 auto 22px', color: '#687b8a', lineHeight: 1.6 }}>Für die Station liegen noch keine Forecast-Daten vor. Aktualisiere die Wetterdaten oder prüfe den API-Key.</p>
+      <div style={{ display: 'inline-flex', gap: 26, flexWrap: 'wrap', justifyContent: 'center', padding: '14px 20px', background: '#f7f9fa', border: '1px solid #e1e7eb', color: '#526575', fontSize: 13 }}>
+        <span>Aktuell <strong>{formatNumber(observation.temperature)}{observation.temperatureUnit}</strong></span>
+        <span>Gefühlt <strong>{formatNumber(observation.feelsLike)}{observation.temperatureUnit}</strong></span>
+        <span>Feuchte <strong>{formatNumber(observation.humidity, 0)} %</strong></span>
+      </div>
+    </div> : <div style={{ overflowX: 'auto' }}>
+      <table style={{ width: '100%', minWidth: 820, borderCollapse: 'collapse', color: '#304c62', fontSize: 13 }}>
+        <thead><tr style={{ background: '#f7f9fa', color: '#718392', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+          <th style={forecastCellStyle}>Zeit</th><th style={forecastCellStyle}>Bedingungen</th><th style={forecastCellStyle}>Temperatur</th><th style={forecastCellStyle}>Gefühlt</th><th style={forecastCellStyle}>Regen</th><th style={forecastCellStyle}>Feuchte</th><th style={forecastCellStyle}>Wind</th><th style={forecastCellStyle}>Luftdruck</th>
+        </tr></thead>
+        <tbody>{forecast.map((entry, index) => <tr key={`${entry.validTime}-${index}`} style={{ borderTop: '1px solid #e6ecef' }}>
+          <td style={forecastCellStyle}><strong>{formatHour(entry.validTime)}</strong></td>
+          <td style={forecastCellStyle}>{entry.condition || '—'}<div style={{ color: '#718392', fontSize: 11, marginTop: 3 }}>Bewölkung {formatNumber(entry.cloudCover, 0)} %</div></td>
+          <td style={forecastCellStyle}><strong style={{ fontSize: 16 }}>{formatNumber(entry.temperature, 0)}{entry.temperatureUnit}</strong></td>
+          <td style={forecastCellStyle}>{formatNumber(entry.feelsLike, 0)}{entry.temperatureUnit}</td>
+          <td style={forecastCellStyle}>{formatNumber(entry.precipChance, 0)} %<div style={{ color: '#718392', fontSize: 11, marginTop: 3 }}>{formatNumber(entry.precipAmount)} {entry.precipUnit}</div></td>
+          <td style={forecastCellStyle}>{formatNumber(entry.humidity, 0)} %<div style={{ color: '#718392', fontSize: 11, marginTop: 3 }}>Taupunkt {formatNumber(entry.dewPoint, 0)}{entry.temperatureUnit}</div></td>
+          <td style={forecastCellStyle}>{formatNumber(entry.windSpeed)} {entry.windUnit}<div style={{ color: '#718392', fontSize: 11, marginTop: 3 }}>{entry.windDirection || '—'}</div></td>
+          <td style={forecastCellStyle}>{formatNumber(entry.pressure)} {entry.pressureUnit}</td>
+        </tr>)}</tbody>
+      </table>
+    </div>}
+  </section>
+}
+
+const forecastCellStyle: CSSProperties = { padding: '12px 10px', textAlign: 'left', verticalAlign: 'top', whiteSpace: 'nowrap' }
+
 function ForecastUnavailable({ title, observation }: { title: string; observation: Observation }) {
   return <section style={{ background: '#fff', border: '1px solid #d9e0e5', borderRadius: 4, boxShadow: '0 3px 12px rgba(27, 49, 67, 0.08)', fontFamily: 'Arial, sans-serif' }}>
     <div style={{ padding: '14px 18px', background: '#eef1f3', borderBottom: '1px solid #d9e0e5', color: '#263d52', fontSize: 14, fontWeight: 700 }}>{title}</div>
     <div style={{ padding: 28, textAlign: 'center' }}>
-      <div style={{ color: '#263d52', fontFamily: 'Georgia, "Times New Roman", serif', fontSize: 26, marginBottom: 8 }}>Forecast data unavailable</div>
+      <div style={{ color: '#263d52', fontFamily: 'Georgia, "Times New Roman", serif', fontSize: 26, marginBottom: 8 }}>Prognosedaten nicht verfügbar</div>
       <p style={{ maxWidth: 560, margin: '0 auto 22px', color: '#687b8a', lineHeight: 1.6 }}>Die angebundene Personal Weather Station liefert aktuell Messwerte, aber keine Stunden- oder 10-Tage-Prognose.</p>
       <div style={{ display: 'inline-flex', gap: 26, flexWrap: 'wrap', justifyContent: 'center', padding: '14px 20px', background: '#f7f9fa', border: '1px solid #e1e7eb', color: '#526575', fontSize: 13 }}>
         <span>Aktuell <strong>{formatNumber(observation.temperature)}{observation.temperatureUnit}</strong></span>

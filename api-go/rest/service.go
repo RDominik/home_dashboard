@@ -8,6 +8,8 @@ import (
 	"webgui-api/mqtt"
 )
 
+const sunTimesMQTTTopic = "nano/esp32/sun-times"
+
 // @brief Owns the REST polling lifecycle and its dependent services.
 // @details
 // RestService coordinates the ETA polling loop, MQTT publication, and the
@@ -65,10 +67,29 @@ func (rs *RestService) Start(mqttManager *mqtt.Manager) {
 	}
 	rs.mqttManager = mqttManager
 	rs.ctx, rs.cancel = context.WithCancel(context.Background())
+	rs.weather.SetSunTimesPublisher(rs.publishSunTimes)
+	// Republish the persisted snapshot on startup so the ESP32 receives current
+	// values even when the next daily forecast refresh is still rate-limited.
+	rs.publishSunTimes(rs.weather.GetSunTimes())
 	rs.weather.Start()
 	log.Printf("📡 REST service starting (interval: %v, topic: %s)...", rs.interval, rs.topic)
 
 	go rs.runLoop()
+}
+
+// @brief Publishes the cached three-day sunrise/sunset payload to the ESP32.
+// @details
+// The payload is a JSON array of local date, sunrise, and sunset values on the
+// nano/esp32 MQTT namespace. Empty snapshots are ignored; publication errors
+// are logged without interrupting weather polling.
+// @param[in] sunTimes Three-day local sunrise/sunset snapshot.
+func (rs *RestService) publishSunTimes(sunTimes []SunTimes) {
+	if len(sunTimes) == 0 || rs.mqttManager == nil {
+		return
+	}
+	if err := rs.mqttManager.PublishRetained(sunTimesMQTTTopic, sunTimes); err != nil {
+		log.Printf("[weather] MQTT sun-times publish failed: %v", err)
+	}
 }
 
 // @brief Runs the ETA polling and MQTT publication loop.

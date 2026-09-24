@@ -26,7 +26,11 @@ const (
 	weatherBucket                   = "weather"
 	weatherSettingsKey              = "settings"
 	weatherDataKey                  = "data"
+	weatherForecastKey              = "forecast"
+	weatherSunTimesKey              = "sunTimes"
 	weatherAPIEndpoint              = "https://api.weather.com/v2/pws/observations/current"
+	weatherHourlyForecastEndpoint   = "https://api.weather.com/v3/wx/forecast/hourly/2day"
+	weatherDailyForecastEndpoint    = "https://api.weather.com/v3/wx/forecast/daily/3day"
 )
 
 // WeatherSettings contains all user-configurable Weather Underground values.
@@ -69,25 +73,57 @@ type WeatherObservation struct {
 type WeatherResponse struct {
 	Settings    WeatherSettings     `json:"settings"`
 	Observation *WeatherObservation `json:"observation,omitempty"`
+	Forecast    []HourlyForecast    `json:"forecast,omitempty"`
+	SunTimes    []SunTimes          `json:"sunTimes,omitempty"`
 	LastFetchAt string              `json:"lastFetchAt,omitempty"`
 	Error       string              `json:"error,omitempty"`
 	Configured  bool                `json:"configured"`
 }
 
+// HourlyForecast contains one normalized hourly forecast row for the web UI.
+type HourlyForecast struct {
+	ValidTime       string  `json:"validTime"`
+	Condition       string  `json:"condition"`
+	Temperature     float64 `json:"temperature"`
+	FeelsLike       float64 `json:"feelsLike"`
+	PrecipChance    float64 `json:"precipChance"`
+	PrecipAmount    float64 `json:"precipAmount"`
+	CloudCover      float64 `json:"cloudCover"`
+	DewPoint        float64 `json:"dewPoint"`
+	Humidity        float64 `json:"humidity"`
+	WindSpeed       float64 `json:"windSpeed"`
+	WindDirection   string  `json:"windDirection"`
+	Pressure        float64 `json:"pressure"`
+	TemperatureUnit string  `json:"temperatureUnit"`
+	WindUnit        string  `json:"windUnit"`
+	PressureUnit    string  `json:"pressureUnit"`
+	PrecipUnit      string  `json:"precipUnit"`
+}
+
+// SunTimes contains local sunrise and sunset times for one forecast day.
+type SunTimes struct {
+	Date    string `json:"date"`
+	Sunrise string `json:"sunrise"`
+	Sunset  string `json:"sunset"`
+}
+
 // WeatherService owns Weather Underground polling, caching, persistence, and HTTP handlers.
 type WeatherService struct {
-	mu          sync.RWMutex
-	settings    WeatherSettings
-	observation *WeatherObservation
-	lastFetchAt time.Time
-	lastError   string
-	db          *bbolt.DB
-	client      *http.Client
-	ctx         context.Context
-	cancel      context.CancelFunc
-	done        chan struct{}
-	fetchMu     sync.Mutex
-	lastRequest time.Time
+	mu                sync.RWMutex
+	settings          WeatherSettings
+	observation       *WeatherObservation
+	forecast          []HourlyForecast
+	sunTimes          []SunTimes
+	sunTimesPublisher func([]SunTimes)
+	lastFetchAt       time.Time
+	lastError         string
+	db                *bbolt.DB
+	client            *http.Client
+	ctx               context.Context
+	cancel            context.CancelFunc
+	done              chan struct{}
+	fetchMu           sync.Mutex
+	lastRequest       time.Time
 }
 
 type weatherAPIResponse struct {
@@ -107,6 +143,27 @@ type weatherAPIResponse struct {
 		Lon             float64         `json:"lon"`
 		Elevation       float64         `json:"elev"`
 	} `json:"observations"`
+}
+
+type weatherHourlyForecastResponse struct {
+	ValidTime             []string  `json:"validTimeLocal"`
+	WxPhraseLong          []string  `json:"wxPhraseLong"`
+	Temperature           []float64 `json:"temperature"`
+	TemperatureFeelsLike  []float64 `json:"temperatureFeelsLike"`
+	PrecipChance          []float64 `json:"precipChance"`
+	QPF                   []float64 `json:"qpf"`
+	CloudCover            []float64 `json:"cloudCover"`
+	DewPoint              []float64 `json:"dewPoint"`
+	RelativeHumidity      []float64 `json:"relativeHumidity"`
+	WindSpeed             []float64 `json:"windSpeed"`
+	WindDirectionCardinal []string  `json:"windDirectionCardinal"`
+	PressureMeanSeaLevel  []float64 `json:"pressureMeanSeaLevel"`
+}
+
+type weatherDailyForecastResponse struct {
+	ValidTime   []string `json:"validTimeLocal"`
+	SunriseTime []string `json:"sunriseTimeLocal"`
+	SunsetTime  []string `json:"sunsetTimeLocal"`
 }
 
 type weatherMetric struct {
@@ -186,6 +243,18 @@ func (s *WeatherService) load() error {
 				s.observation = &observation
 			}
 		}
+		if raw := bucket.Get([]byte(weatherForecastKey)); raw != nil {
+			var forecast []HourlyForecast
+			if err := json.Unmarshal(raw, &forecast); err == nil {
+				s.forecast = forecast
+			}
+		}
+		if raw := bucket.Get([]byte(weatherSunTimesKey)); raw != nil {
+			var sunTimes []SunTimes
+			if err := json.Unmarshal(raw, &sunTimes); err == nil {
+				s.sunTimes = sunTimes
+			}
+		}
 		s.normalizeSettings()
 		return nil
 	})
@@ -200,7 +269,8 @@ func (s *WeatherService) load() error {
 // @return Error when serialization or the bbolt write transaction fails.
 func (s *WeatherService) persist() error {
 	s.mu.RLock()
-	settings, observation := s.settings, s.observation
+	settings, observation, forecast := s.settings, s.observation, append([]HourlyForecast(nil), s.forecast...)
+	sunTimes := append([]SunTimes(nil), s.sunTimes...)
 	s.mu.RUnlock()
 	return s.db.Update(func(tx *bbolt.Tx) error {
 		bucket, err := tx.CreateBucketIfNotExists([]byte(weatherBucket))
@@ -219,9 +289,22 @@ func (s *WeatherService) persist() error {
 			if err != nil {
 				return err
 			}
-			return bucket.Put([]byte(weatherDataKey), dataRaw)
+			if err := bucket.Put([]byte(weatherDataKey), dataRaw); err != nil {
+				return err
+			}
 		}
-		return nil
+		forecastRaw, err := json.Marshal(forecast)
+		if err != nil {
+			return err
+		}
+		if err := bucket.Put([]byte(weatherForecastKey), forecastRaw); err != nil {
+			return err
+		}
+		sunTimesRaw, err := json.Marshal(sunTimes)
+		if err != nil {
+			return err
+		}
+		return bucket.Put([]byte(weatherSunTimesKey), sunTimesRaw)
 	})
 }
 
@@ -331,8 +414,11 @@ func (s *WeatherService) refresh() {
 	// the provider limit immediately before every outbound API call.
 	s.fetchMu.Lock()
 	defer s.fetchMu.Unlock()
-	wait := s.minimumRequestInterval() - time.Since(s.lastRequest)
-	if !s.lastRequest.IsZero() && wait > 0 {
+	s.mu.RLock()
+	lastRequest := s.lastRequest
+	s.mu.RUnlock()
+	wait := s.minimumRequestInterval() - time.Since(lastRequest)
+	if !lastRequest.IsZero() && wait > 0 {
 		timer := time.NewTimer(wait)
 		select {
 		case <-timer.C:
@@ -341,7 +427,9 @@ func (s *WeatherService) refresh() {
 			return
 		}
 	}
+	s.mu.Lock()
 	s.lastRequest = time.Now()
+	s.mu.Unlock()
 	s.mu.RLock()
 	settings := s.settings
 	s.mu.RUnlock()
@@ -392,14 +480,227 @@ func (s *WeatherService) refresh() {
 	observation := normalizeObservation(payload.Observations[0], settings.Units)
 	now := time.Now().UTC()
 	observation.UpdatedAt = now.Format(time.RFC3339)
+	forecast, forecastErr := s.fetchHourlyForecast(settings, observation.Latitude, observation.Longitude)
+	sunTimes, sunTimesErr := s.fetchSunTimes(settings, observation.Latitude, observation.Longitude)
 	s.mu.Lock()
 	s.observation = &observation
 	s.lastFetchAt = now
 	s.lastError = ""
+	if forecastErr == nil {
+		s.forecast = forecast
+	}
+	if sunTimesErr == nil {
+		s.sunTimes = sunTimes
+	}
+	publisher := s.sunTimesPublisher
+	publishedSunTimes := append([]SunTimes(nil), s.sunTimes...)
 	s.mu.Unlock()
+	if forecastErr != nil {
+		log.Printf("[weather] hourly forecast failed: %v", forecastErr)
+	}
+	if sunTimesErr != nil {
+		log.Printf("[weather] daily sun-times forecast failed: %v", sunTimesErr)
+	} else if publisher != nil {
+		publisher(publishedSunTimes)
+	}
 	if err := s.persist(); err != nil {
 		log.Printf("[weather] persist failed: %v", err)
 	}
+}
+
+// @brief Retrieves sunrise and sunset for the next three local forecast days.
+// @details
+// The Weather Company daily endpoint returns local timestamps in parallel
+// arrays. They are joined by index and cached only when all three days are
+// present, so a partial provider response cannot replace a complete cache.
+// @param[in] settings Active Weather Underground settings.
+// @param[in] latitude Station latitude from the current observation.
+// @param[in] longitude Station longitude from the current observation.
+// @return Exactly three local date/sunrise/sunset values, or an API/validation error.
+func (s *WeatherService) fetchSunTimes(settings WeatherSettings, latitude, longitude float64) ([]SunTimes, error) {
+	if latitude == 0 && longitude == 0 {
+		return nil, fmt.Errorf("Stationkoordinaten fehlen")
+	}
+	if err := s.waitForRequestSlot(); err != nil {
+		return nil, err
+	}
+	query := url.Values{}
+	query.Set("geocode", fmt.Sprintf("%.6f,%.6f", latitude, longitude))
+	query.Set("format", "json")
+	query.Set("units", weatherProviderUnits(settings.Units))
+	query.Set("language", "de-DE")
+	query.Set("apiKey", settings.APIKey)
+	request, err := http.NewRequestWithContext(s.ctx, http.MethodGet, weatherDailyForecastEndpoint+"?"+query.Encode(), nil)
+	if err != nil {
+		return nil, err
+	}
+	response, err := s.client.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+		return nil, fmt.Errorf("Weather Underground Tagesprognose antwortet mit HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var payload weatherDailyForecastResponse
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		return nil, err
+	}
+	sunTimes := normalizeSunTimes(payload)
+	if len(sunTimes) != 3 {
+		return nil, fmt.Errorf("Tagesprognose lieferte keine vollständigen Sonnenzeiten für drei Tage")
+	}
+	return sunTimes, nil
+}
+
+// @brief Joins daily forecast arrays into local sunrise/sunset values.
+// @param[in] payload Decoded daily forecast response.
+// @return Up to three complete entries, or an empty slice for incomplete arrays.
+func normalizeSunTimes(payload weatherDailyForecastResponse) []SunTimes {
+	count := len(payload.ValidTime)
+	if len(payload.SunriseTime) < count {
+		count = len(payload.SunriseTime)
+	}
+	if len(payload.SunsetTime) < count {
+		count = len(payload.SunsetTime)
+	}
+	if count > 3 {
+		count = 3
+	}
+	if count != 3 {
+		return nil
+	}
+	result := make([]SunTimes, count)
+	for index := 0; index < count; index++ {
+		result[index] = SunTimes{
+			Date:    payload.ValidTime[index],
+			Sunrise: payload.SunriseTime[index],
+			Sunset:  payload.SunsetTime[index],
+		}
+	}
+	return result
+}
+
+// @brief Fetches and normalizes the next 24 hourly forecast entries.
+// @details
+// The endpoint uses the station coordinates returned by the current-observation
+// request. The provider response is array-based, so each index is converted
+// into one stable frontend row while missing optional arrays fall back to zero
+// values. Only the next 24 entries are retained and persisted.
+// @param[in] settings Active Weather Underground settings.
+// @param[in] latitude Station latitude from the current observation.
+// @param[in] longitude Station longitude from the current observation.
+// @return Normalized hourly forecast rows or an error from the provider request.
+func (s *WeatherService) fetchHourlyForecast(settings WeatherSettings, latitude, longitude float64) ([]HourlyForecast, error) {
+	if latitude == 0 && longitude == 0 {
+		return nil, fmt.Errorf("Stationkoordinaten fehlen")
+	}
+	if err := s.waitForRequestSlot(); err != nil {
+		return nil, err
+	}
+	query := url.Values{}
+	query.Set("geocode", fmt.Sprintf("%.6f,%.6f", latitude, longitude))
+	query.Set("format", "json")
+	query.Set("units", weatherProviderUnits(settings.Units))
+	query.Set("language", "de-DE")
+	query.Set("apiKey", settings.APIKey)
+	request, err := http.NewRequestWithContext(s.ctx, http.MethodGet, weatherHourlyForecastEndpoint+"?"+query.Encode(), nil)
+	if err != nil {
+		return nil, err
+	}
+	response, err := s.client.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+		return nil, fmt.Errorf("Weather Underground Forecast antwortet mit HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var payload weatherHourlyForecastResponse
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		return nil, err
+	}
+	return normalizeHourlyForecast(payload, settings.Units), nil
+}
+
+// @brief Enforces the configured provider request spacing before an API call.
+// @return Error when the service context is canceled while waiting.
+func (s *WeatherService) waitForRequestSlot() error {
+	s.mu.RLock()
+	requestsPerMinute := s.settings.MaxRequestsPerMinute
+	lastRequest := s.lastRequest
+	s.mu.RUnlock()
+	if requestsPerMinute < 1 {
+		requestsPerMinute = 1
+	}
+	minimum := time.Duration((60+requestsPerMinute-1)/requestsPerMinute) * time.Second
+	wait := minimum - time.Since(lastRequest)
+	if lastRequest.IsZero() || wait <= 0 {
+		s.mu.Lock()
+		s.lastRequest = time.Now()
+		s.mu.Unlock()
+		return nil
+	}
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		s.mu.Lock()
+		s.lastRequest = time.Now()
+		s.mu.Unlock()
+		return nil
+	case <-s.ctx.Done():
+		return s.ctx.Err()
+	}
+}
+
+// @brief Converts the provider's parallel hourly arrays into frontend rows.
+// @param[in] payload Decoded hourly forecast response.
+// @param[in] units Active unit system used for display labels.
+// @return At most 24 normalized hourly forecast entries.
+func normalizeHourlyForecast(payload weatherHourlyForecastResponse, units string) []HourlyForecast {
+	count := len(payload.ValidTime)
+	if count > 24 {
+		count = 24
+	}
+	forecast := make([]HourlyForecast, 0, count)
+	for index := 0; index < count; index++ {
+		forecast = append(forecast, HourlyForecast{
+			ValidTime:       payload.ValidTime[index],
+			Condition:       valueAt(payload.WxPhraseLong, index),
+			Temperature:     numberAt(payload.Temperature, index),
+			FeelsLike:       numberAt(payload.TemperatureFeelsLike, index),
+			PrecipChance:    numberAt(payload.PrecipChance, index),
+			PrecipAmount:    numberAt(payload.QPF, index),
+			CloudCover:      numberAt(payload.CloudCover, index),
+			DewPoint:        numberAt(payload.DewPoint, index),
+			Humidity:        numberAt(payload.RelativeHumidity, index),
+			WindSpeed:       numberAt(payload.WindSpeed, index),
+			WindDirection:   valueAt(payload.WindDirectionCardinal, index),
+			Pressure:        numberAt(payload.PressureMeanSeaLevel, index),
+			TemperatureUnit: map[bool]string{true: "°F", false: "°C"}[units == "imperial"],
+			WindUnit:        map[bool]string{true: "mph", false: "km/h"}[units == "imperial"],
+			PressureUnit:    map[bool]string{true: "inHg", false: "hPa"}[units == "imperial"],
+			PrecipUnit:      map[bool]string{true: "in", false: "mm"}[units == "imperial"],
+		})
+	}
+	return forecast
+}
+
+func numberAt(values []float64, index int) float64 {
+	if index < 0 || index >= len(values) {
+		return 0
+	}
+	return values[index]
+}
+
+func valueAt(values []string, index int) string {
+	if index < 0 || index >= len(values) {
+		return "—"
+	}
+	return values[index]
 }
 
 // @brief Converts the UI unit name to the Weather Underground API code.
@@ -505,6 +806,25 @@ func (s *WeatherService) GetSettings() WeatherSettings {
 	return s.settings
 }
 
+// @brief Returns a copy of the cached sunrise and sunset forecast.
+// @details
+// The returned slice contains at most three local-time entries and is copied
+// while holding a read lock so callers may safely retain or modify it.
+// @return Cached sunrise and sunset values for the next three days.
+func (s *WeatherService) GetSunTimes() []SunTimes {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return append([]SunTimes(nil), s.sunTimes...)
+}
+
+// @brief Registers a callback invoked after a successful sunrise/sunset refresh.
+// @param[in] publisher Function that publishes a copied three-day snapshot.
+func (s *WeatherService) SetSunTimesPublisher(publisher func([]SunTimes)) {
+	s.mu.Lock()
+	s.sunTimesPublisher = publisher
+	s.mu.Unlock()
+}
+
 // @brief Validates, stores, and persists new weather settings.
 // @details
 // An omitted API key preserves the existing key so UI updates to unrelated
@@ -541,6 +861,8 @@ func (s *WeatherService) GetStatus() WeatherResponse {
 	response := WeatherResponse{
 		Settings:    s.settings,
 		Observation: observation,
+		Forecast:    append([]HourlyForecast(nil), s.forecast...),
+		SunTimes:    append([]SunTimes(nil), s.sunTimes...),
 		Configured:  strings.TrimSpace(s.settings.APIKey) != "",
 		Error:       s.lastError,
 	}

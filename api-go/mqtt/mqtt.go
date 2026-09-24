@@ -161,6 +161,23 @@ func (mqtt_manager *Manager) IsConnected() bool {
 // / @param value  Der zu sendende Wert (wird JSON-kodiert).
 // / @return Fehler oder nil bei Erfolg.
 func (mqtt_manager *Manager) Publish(topic string, value any) error {
+	return mqtt_manager.publish(topic, value, false)
+}
+
+// @brief Veröffentlicht eine retained MQTT-Nachricht.
+//
+// @details Der Broker speichert den letzten Wert und liefert ihn beim nächsten
+// Abonnieren des Topics erneut aus. Das eignet sich für Zustände, die ein
+// zeitweise schlafender Controller nach dem Wiederverbinden benötigt.
+//
+// @param topic Das MQTT-Topic, auf dem veröffentlicht werden soll.
+// @param value Der zu sendende Wert (wird JSON-kodiert).
+// @return Fehler oder nil bei Erfolg.
+func (mqtt_manager *Manager) PublishRetained(topic string, value any) error {
+	return mqtt_manager.publish(topic, value, true)
+}
+
+func (mqtt_manager *Manager) publish(topic string, value any, retained bool) error {
 	if mqtt_manager.client == nil {
 		return fmt.Errorf("MQTT client is not initialized")
 	}
@@ -176,7 +193,7 @@ func (mqtt_manager *Manager) Publish(topic string, value any) error {
 		if !mqtt_manager.waitForConnection(publishConnectWait) {
 			lastErr = fmt.Errorf("MQTT client is not connected")
 		} else {
-			token := mqtt_manager.client.Publish(topic, 0, false, payload)
+			token := mqtt_manager.client.Publish(topic, 0, retained, payload)
 			if !token.WaitTimeout(publishWaitTimeout) {
 				lastErr = fmt.Errorf("mqtt publish timeout after %s", publishWaitTimeout)
 			} else {
