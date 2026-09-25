@@ -102,13 +102,16 @@ type ChickenDoor struct {
 	onlineAt           time.Time
 	wakeDeltaMs        int64
 
-	scheduleAwakeSeconds      int
-	scheduleTimestamps        []string
-	scheduleEntries           []ScheduleEntry
-	scheduleActive            bool
-	scheduleWakeAt            time.Time
-	pendingScheduleAction     string
-	scheduleSleepPending      bool
+	scheduleAwakeSeconds  int
+	scheduleTimestamps    []string
+	scheduleEntries       []ScheduleEntry
+	scheduleActive        bool
+	scheduleWakeAt        time.Time
+	pendingScheduleAction string
+	scheduleSleepPending  bool
+	// scheduleEarlyWakePending distinguishes a wake-too-early sleep retry from
+	// the normal post-motor sleep phase, so only the former is recorded as wait.
+	scheduleEarlyWakePending  bool
 	scheduleHistory           []ScheduleHistoryEntry
 	sleepTime                 int
 	motorAutoStopOpenSeconds  int
@@ -146,12 +149,15 @@ type ChickenDoor struct {
 }
 
 type persistedState struct {
-	ScheduleAwakeSeconds      int                    `json:"scheduleAwakeSeconds"`
-	ScheduleTimestamps        []string               `json:"scheduleTimestamps"`
-	ScheduleEntries           []ScheduleEntry        `json:"scheduleEntries,omitempty"`
-	ScheduleActive            bool                   `json:"scheduleActive"`
-	PendingScheduleAction     string                 `json:"pendingScheduleAction,omitempty"`
-	ScheduleSleepPending      bool                   `json:"scheduleSleepPending,omitempty"`
+	ScheduleAwakeSeconds  int             `json:"scheduleAwakeSeconds"`
+	ScheduleTimestamps    []string        `json:"scheduleTimestamps"`
+	ScheduleEntries       []ScheduleEntry `json:"scheduleEntries,omitempty"`
+	ScheduleActive        bool            `json:"scheduleActive"`
+	PendingScheduleAction string          `json:"pendingScheduleAction,omitempty"`
+	ScheduleSleepPending  bool            `json:"scheduleSleepPending,omitempty"`
+	// ScheduleEarlyWakePending persists whether the pending sleep exists solely
+	// because the controller woke before its planned schedule timestamp.
+	ScheduleEarlyWakePending  bool                   `json:"scheduleEarlyWakePending,omitempty"`
 	ScheduleHistory           []ScheduleHistoryEntry `json:"scheduleHistory"`
 	SleepTime                 int                    `json:"sleepTime"`
 	MotorAutoStopSeconds      int                    `json:"motorAutoStopSeconds,omitempty"`
@@ -293,6 +299,7 @@ func (h *ChickenDoor) loadPersistedState() {
 	h.scheduleActive = state.ScheduleActive
 	h.pendingScheduleAction = state.PendingScheduleAction
 	h.scheduleSleepPending = state.ScheduleSleepPending
+	h.scheduleEarlyWakePending = state.ScheduleEarlyWakePending
 	h.scheduleHistory = append([]ScheduleHistoryEntry(nil), state.ScheduleHistory...)
 	h.sleepTime = state.SleepTime
 	// Migrate the former single timeout into both directional settings when a
@@ -325,6 +332,7 @@ func (h *ChickenDoor) loadPersistedState() {
 	h.lastStatusCharging = state.LastStatusCharging
 	h.lastStatusLimitClose = state.LastStatusLimitClose
 	h.lastStatusLimitOpen = state.LastStatusLimitOpen
+	historyRepaired := repairLegacyWaitHistory(h.scheduleHistory, h.scheduleEntries)
 	if h.controlMode == "" {
 		if h.scheduleActive {
 			h.controlMode = "schedule"
@@ -333,6 +341,11 @@ func (h *ChickenDoor) loadPersistedState() {
 		}
 	}
 	h.mu.Unlock()
+	if historyRepaired {
+		// Persist the one-time correction so the history stays repaired after
+		// subsequent restarts instead of only being fixed in the in-memory view.
+		h.persistState()
+	}
 
 	log.Printf("[chickendoor-state] restored schedule: active=%t timestamps=%d history=%d", h.scheduleActive, len(h.scheduleTimestamps), len(h.scheduleHistory))
 }
@@ -351,6 +364,7 @@ func (h *ChickenDoor) persistState() {
 		ScheduleActive:            h.scheduleActive,
 		PendingScheduleAction:     h.pendingScheduleAction,
 		ScheduleSleepPending:      h.scheduleSleepPending,
+		ScheduleEarlyWakePending:  h.scheduleEarlyWakePending,
 		ScheduleHistory:           append([]ScheduleHistoryEntry(nil), h.scheduleHistory...),
 		SleepTime:                 h.sleepTime,
 		MotorAutoStopOpenSeconds:  h.motorAutoStopOpenSeconds,

@@ -224,11 +224,18 @@ func (h *ChickenDoor) scheduleSleepUntilNext(reason string) bool {
 			currentEndPosition = doorPos
 		}
 	}
+	// An early controller wake that did not run the motor is represented by the
+	// new sleep-cycle row being created here. Do not rewrite the prior sleep row:
+	// that row may already contain the end position from a completed movement.
+	if reason == "early-wake" && currentEndPosition == "" && currentMotorDuration == 0 && h.motorRunningSince.IsZero() {
+		currentEndPosition = "wait"
+	}
 	h.motorRunningSince = time.Time{}
 	h.motorRunningAction = ""
 	h.motorLimitReachedAt = time.Time{}
 	h.pendingScheduleAction = normalizeScheduleAction(nextEntry.Action)
 	h.scheduleSleepPending = false
+	h.scheduleEarlyWakePending = false
 	nowTs := time.Now()
 	h.lastSleepCommandAt = nowTs
 	h.scheduleHistory = append(h.scheduleHistory, ScheduleHistoryEntry{SleepSeconds: sleepSeconds, BatteryPercent: batteryPercent, SleepCommandAtMs: nowTs.UnixMilli(), EndPosition: currentEndPosition, MotorDurationSec: currentMotorDuration})
@@ -307,6 +314,50 @@ func findMatchingScheduleAction(now time.Time, entries []ScheduleEntry, maxDiff 
 		return bestAction
 	}
 	return "none"
+}
+
+// @brief Repairs history rows affected by the former early-wake wait annotation.
+// @details
+// Older code overwrote the previous sleep row's completed motor end position
+// with "wait" when the controller woke early. A positive motor duration proves
+// that row represented an actual movement, so its configured action is used to
+// restore the direction. When the following sleep row was created immediately
+// after an early wake and contains no motor data, that newer row receives the
+// "wait" annotation instead. Incomplete or ambiguous rows are left unchanged.
+// @param[in,out] history Chronologically ordered history rows restored from bbolt.
+// @param[in] entries Current configured actions used to recover motor direction.
+// @return true when any persisted history value was repaired.
+func repairLegacyWaitHistory(history []ScheduleHistoryEntry, entries []ScheduleEntry) bool {
+	changed := false
+	location := scheduleNow().Location()
+	for index := range history {
+		entry := &history[index]
+		if strings.EqualFold(strings.TrimSpace(entry.EndPosition), "wait") && entry.MotorDurationSec > 0 && entry.SleepCommandAtMs > 0 {
+			referenceTime := time.UnixMilli(entry.SleepCommandAtMs).In(location)
+			switch findMatchingScheduleAction(referenceTime, entries, 15*time.Minute) {
+			case "open":
+				entry.EndPosition = "offen"
+				changed = true
+			case "close":
+				entry.EndPosition = "geschlossen"
+				changed = true
+			}
+		}
+
+		if index+1 >= len(history) || entry.SleepCommandAtMs <= 0 || entry.SleepSeconds <= 0 || entry.WokeUpAtMs <= 0 {
+			continue
+		}
+		plannedWakeAtMs := entry.SleepCommandAtMs + int64(entry.SleepSeconds)*1000
+		next := &history[index+1]
+		wakeWasEarly := entry.WokeUpAtMs < plannedWakeAtMs
+		nextSleepFollowedWake := next.SleepCommandAtMs >= entry.WokeUpAtMs &&
+			next.SleepCommandAtMs-entry.WokeUpAtMs <= int64(5*time.Minute/time.Millisecond)
+		if wakeWasEarly && nextSleepFollowedWake && next.EndPosition == "" && next.MotorDurationSec == 0 {
+			next.EndPosition = "wait"
+			changed = true
+		}
+	}
+	return changed
 }
 
 // @brief Executes a normalized schedule motor action and records its start.
@@ -411,10 +462,8 @@ func (h *ChickenDoor) updateStateTracking(controllerState, sleepState string, st
 		if h.scheduleActive {
 			beforePlanned, lead := h.classifyWakeTiming(stateTs)
 			if beforePlanned {
-				if n := len(h.scheduleHistory); n > 0 {
-					h.scheduleHistory[n-1].EndPosition = "wait"
-				}
 				h.scheduleSleepPending = true
+				h.scheduleEarlyWakePending = true
 				h.scheduleWakeAt = time.Now()
 				log.Printf("[chickendoor-schedule] early wake (%s) -> skip action, schedule sleep until planned wake", lead.Round(time.Second))
 			} else {
@@ -466,6 +515,7 @@ func (h *ChickenDoor) scheduleTick() {
 	h.mu.Lock()
 	action := h.pendingScheduleAction
 	waitingToSleep := h.scheduleSleepPending
+	earlyWakePending := h.scheduleEarlyWakePending
 	actionAlreadyAtTarget := false
 	if !waitingToSleep {
 		if action == "" || action == "none" {
@@ -485,6 +535,7 @@ func (h *ChickenDoor) scheduleTick() {
 		actionAlreadyAtTarget = scheduleActionAlreadyAtTarget(action, limitClose, limitOpen)
 		h.pendingScheduleAction = ""
 		h.scheduleSleepPending = true
+		h.scheduleEarlyWakePending = false
 		awakeSeconds := h.scheduleAwakeSeconds
 		// A scheduled motor movement must not be cut short by the general
 		// awake window. Keep the controller awake for at least the configured
@@ -500,8 +551,6 @@ func (h *ChickenDoor) scheduleTick() {
 			}
 		}
 		h.scheduleWakeAt = time.Now().Add(time.Duration(awakeSeconds) * time.Second)
-	} else {
-		h.scheduleSleepPending = false
 	}
 	h.mu.Unlock()
 	h.persistState()
@@ -514,7 +563,13 @@ func (h *ChickenDoor) scheduleTick() {
 		h.executeScheduleAction(action)
 		return
 	}
-	if ok := h.scheduleSleepUntilNext("post-online-delay"); !ok {
+	sleepReason := "post-online-delay"
+	if earlyWakePending {
+		// This path is reached only after classifyWakeTiming confirms that the
+		// controller woke before the scheduled timestamp and no motor action ran.
+		sleepReason = "early-wake"
+	}
+	if ok := h.scheduleSleepUntilNext(sleepReason); !ok {
 		h.mu.Lock()
 		if h.scheduleActive {
 			h.scheduleWakeAt = time.Now().Add(scheduleRetryDelay)
