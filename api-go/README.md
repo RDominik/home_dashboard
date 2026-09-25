@@ -44,6 +44,7 @@ High-level API areas
 
 - Wallbox: `/api/wallbox/status`, `/api/wallbox/set`
 - ChickenDoor (Huhnerklappe): status/ui-state/schedule/set endpoints under `/api/huehnerklappe/*`
+- Weather: `/api/weather/status`, `/api/weather/settings`, `/api/weather/refresh`; current station data from Weather Underground and hourly forecast/sunrise/sunset from Open-Meteo. See the [weather API integration reference](../WEATHER_API.md) for providers, fields, usage terms, and the retained `nano/esp32/sun-times` MQTT payload.
 - MQTT debug/status: `/api/mqtt/status`
 
 Build & run (local dev)

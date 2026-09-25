@@ -4,6 +4,7 @@
 
 - [Web UI Dokumentation](webui/README.md)
 - [Backend (Go API) Dokumentation](api-go/README.md)
+- [Wetter-API-Integration: Provider, Endpunkte, Datenfelder und MQTT](WEATHER_API.md)
 
 Die beiden Unter-READMEs enthalten Details zu Komponenten, Laufzeitverhalten und lokalen Build-/Debug-Kommandos.
 

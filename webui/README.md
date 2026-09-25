@@ -40,6 +40,10 @@ Ziel: Einfache Weboberfläche mit Seitenleiste, um verschiedene Dashboards anzuz
 - `UpdatePage.tsx`
 	- UI fur Update-Prozesse.
 
+- `Weather.tsx`
+	- Wetterstation: aktuelle Messwerte von Weather Underground und Stunden-/Sonnenzeiten-Forecast von Open-Meteo.
+	- Endpunkte, Variablen, Einheiten und Nutzungsbedingungen: [Wetter-API-Integration](../WEATHER_API.md).
+
 - `Inverter.tsx`, `Wallbox.tsx`
 	- Weitere Seitenkomponenten fur Inverter-/Wallbox-Funktionen (je nach aktueller Router-Konfiguration eingebunden oder vorbereitet).
 
@@ -50,7 +54,8 @@ Ziel: Einfache Weboberfläche mit Seitenleiste, um verschiedene Dashboards anzuz
 
 ### API-Anbindung im Frontend
 
-- Primar uber REST-Endpunkte, z. B. `/api/huehnerklappe/*`, `/api/wallbox/*`, `/api/inverter/*`.
+- Primär über REST-Endpunkte, z. B. `/api/huehnerklappe/*`, `/api/wallbox/*`, `/api/inverter/*` und `/api/weather/*`.
+- Die Wetterseite liest `/api/weather/status`, speichert Konfiguration über `/api/weather/settings` und stößt Aktualisierungen über `/api/weather/refresh` an. Der Go-Backenddienst ruft die aktuelle PWS-Messung bei Weather Underground und den Forecast bei Open-Meteo ab.
 - Entwicklungsbetrieb typischerweise uber Vite-Dev-Server, Produktionsbetrieb uber Build + statisches Hosting.
 
 ## Entwicklung
@@ -86,6 +91,5 @@ npm run preview
 ```
 
 ## TODO
-- Datenquellen anbinden (InfluxDB / REST)
 - Karten/Charts (z.B. Recharts)
 - Auth / Deployment
