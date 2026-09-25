@@ -33,6 +33,8 @@ Documentation and code quality rules:
 - Add very detailed inline comments throughout the implementation, including control flow, state transitions, edge cases, and persistence behavior.
 - Prefer over-explaining intent and rationale in comments rather than keeping comments minimal.
 - Keep changes minimal and localized.
+- Keep documentation current whenever implementation, API contracts, MQTT topics/payloads, configuration, build/run steps, or user-visible behavior changes. Update the relevant README(s) in the same change; never leave README content stale.
+- For weather provider, endpoint, query, response, licensing/usage, or MQTT integration changes, update the repository-root `WEATHER_API.md` and its README links in the same change.
 
 Validation rules after changes:
 - Run backend build: cd /home/dominik/Repository/webgui/api-go && go build ./...
