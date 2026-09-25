@@ -29,8 +29,7 @@ const (
 	weatherForecastKey              = "forecast"
 	weatherSunTimesKey              = "sunTimes"
 	weatherAPIEndpoint              = "https://api.weather.com/v2/pws/observations/current"
-	weatherHourlyForecastEndpoint   = "https://api.weather.com/v3/wx/forecast/hourly/2day"
-	weatherDailyForecastEndpoint    = "https://api.weather.com/v3/wx/forecast/daily/3day"
+	openMeteoForecastEndpoint       = "https://api.open-meteo.com/v1/forecast"
 )
 
 // WeatherSettings contains all user-configurable Weather Underground values.
@@ -108,7 +107,7 @@ type SunTimes struct {
 	Sunset  string `json:"sunset"`
 }
 
-// WeatherService owns Weather Underground polling, caching, persistence, and HTTP handlers.
+// WeatherService owns personal-station polling, Open-Meteo forecasting, caching, and persistence.
 type WeatherService struct {
 	mu                sync.RWMutex
 	settings          WeatherSettings
@@ -147,25 +146,50 @@ type weatherAPIResponse struct {
 	} `json:"observations"`
 }
 
-type weatherHourlyForecastResponse struct {
-	ValidTime             []string  `json:"validTimeLocal"`
-	WxPhraseLong          []string  `json:"wxPhraseLong"`
-	Temperature           []float64 `json:"temperature"`
-	TemperatureFeelsLike  []float64 `json:"temperatureFeelsLike"`
-	PrecipChance          []float64 `json:"precipChance"`
-	QPF                   []float64 `json:"qpf"`
-	CloudCover            []float64 `json:"cloudCover"`
-	DewPoint              []float64 `json:"dewPoint"`
-	RelativeHumidity      []float64 `json:"relativeHumidity"`
-	WindSpeed             []float64 `json:"windSpeed"`
-	WindDirectionCardinal []string  `json:"windDirectionCardinal"`
-	PressureMeanSeaLevel  []float64 `json:"pressureMeanSeaLevel"`
+// openMeteoForecastResponse models the selected hourly and daily blocks returned by Open-Meteo.
+type openMeteoForecastResponse struct {
+	// Hourly contains current-hour-aligned model data requested for the next 24 points.
+	Hourly openMeteoHourlyResponse `json:"hourly"`
+	// Daily contains the three local dates and their corresponding solar times.
+	Daily openMeteoDailyResponse `json:"daily"`
 }
 
-type weatherDailyForecastResponse struct {
-	ValidTime   []string `json:"validTimeLocal"`
-	SunriseTime []string `json:"sunriseTimeLocal"`
-	SunsetTime  []string `json:"sunsetTimeLocal"`
+// openMeteoHourlyResponse contains the requested hourly variables as parallel time series.
+type openMeteoHourlyResponse struct {
+	// Time contains local ISO-8601 timestamps shared by every hourly array.
+	Time []string `json:"time"`
+	// Temperature contains 2-meter air temperature in the requested temperature unit.
+	Temperature []float64 `json:"temperature_2m"`
+	// FeelsLike contains apparent temperature in the requested temperature unit.
+	FeelsLike []float64 `json:"apparent_temperature"`
+	// PrecipChance contains the probability of measurable precipitation as percent values.
+	PrecipChance []float64 `json:"precipitation_probability"`
+	// Precipitation contains the previous-hour precipitation sum in the requested unit.
+	Precipitation []float64 `json:"precipitation"`
+	// CloudCover contains total cloud cover as a percentage.
+	CloudCover []float64 `json:"cloud_cover"`
+	// DewPoint contains 2-meter dew-point temperature in the requested temperature unit.
+	DewPoint []float64 `json:"dew_point_2m"`
+	// Humidity contains 2-meter relative humidity as percent values.
+	Humidity []float64 `json:"relative_humidity_2m"`
+	// WindSpeed contains 10-meter wind speed in the requested speed unit.
+	WindSpeed []float64 `json:"wind_speed_10m"`
+	// WindDirection contains 10-meter wind bearing in degrees clockwise from north.
+	WindDirection []float64 `json:"wind_direction_10m"`
+	// Pressure contains mean-sea-level pressure in hectopascals.
+	Pressure []float64 `json:"pressure_msl"`
+	// WeatherCode contains WMO condition codes mapped to German text for the UI.
+	WeatherCode []float64 `json:"weather_code"`
+}
+
+// openMeteoDailyResponse contains dates and local sunrise/sunset timestamps.
+type openMeteoDailyResponse struct {
+	// Time contains local calendar dates aligned with the daily solar-time arrays.
+	Time []string `json:"time"`
+	// Sunrise contains each day's sunrise as a local ISO-8601 timestamp.
+	Sunrise []string `json:"sunrise"`
+	// Sunset contains each day's sunset as a local ISO-8601 timestamp.
+	Sunset []string `json:"sunset"`
 }
 
 type weatherMetric struct {
@@ -482,8 +506,7 @@ func (s *WeatherService) refresh() {
 	observation := normalizeObservation(payload.Observations[0], settings.Units)
 	now := time.Now().UTC()
 	observation.UpdatedAt = now.Format(time.RFC3339)
-	forecast, forecastErr := s.fetchHourlyForecast(settings, observation.Latitude, observation.Longitude)
-	sunTimes, sunTimesErr := s.fetchSunTimes(settings, observation.Latitude, observation.Longitude)
+	forecast, sunTimes, forecastErr := s.fetchOpenMeteoForecast(settings, observation.Latitude, observation.Longitude)
 	s.mu.Lock()
 	s.observation = &observation
 	s.lastFetchAt = now
@@ -494,7 +517,7 @@ func (s *WeatherService) refresh() {
 	} else {
 		s.forecastError = forecastErr.Error()
 	}
-	if sunTimesErr == nil {
+	if forecastErr == nil {
 		s.sunTimes = sunTimes
 	}
 	publisher := s.sunTimesPublisher
@@ -503,9 +526,7 @@ func (s *WeatherService) refresh() {
 	if forecastErr != nil {
 		log.Printf("[weather] hourly forecast failed: %v", forecastErr)
 	}
-	if sunTimesErr != nil {
-		log.Printf("[weather] daily sun-times forecast failed: %v", sunTimesErr)
-	} else if publisher != nil {
+	if forecastErr == nil && publisher != nil {
 		publisher(publishedSunTimes)
 	}
 	if err := s.persist(); err != nil {
@@ -513,62 +534,70 @@ func (s *WeatherService) refresh() {
 	}
 }
 
-// @brief Retrieves sunrise and sunset for the next three local forecast days.
+// @brief Retrieves the hourly and three-day solar forecast from Open-Meteo.
 // @details
-// The Weather Company daily endpoint returns local timestamps in parallel
-// arrays. They are joined by index and cached only when all three days are
-// present, so a partial provider response cannot replace a complete cache.
-// @param[in] settings Active Weather Underground settings.
+// The existing Weather Underground account remains responsible only for the
+// personal-station observation. Open-Meteo supplies public forecast values and
+// local sunrise/sunset data in a single request, removing dependency on paid
+// forecast products. The query requests exactly 24 hourly points and three
+// daily solar-time points in the coordinate-resolved local timezone.
+// @param[in] settings Active weather display-unit settings.
 // @param[in] latitude Station latitude from the current observation.
 // @param[in] longitude Station longitude from the current observation.
-// @return Exactly three local date/sunrise/sunset values, or an API/validation error.
-func (s *WeatherService) fetchSunTimes(settings WeatherSettings, latitude, longitude float64) ([]SunTimes, error) {
+// @return Hourly rows, three local sunrise/sunset values, and any HTTP, decoding, or validation error.
+func (s *WeatherService) fetchOpenMeteoForecast(settings WeatherSettings, latitude, longitude float64) ([]HourlyForecast, []SunTimes, error) {
 	if latitude == 0 && longitude == 0 {
-		return nil, fmt.Errorf("Stationkoordinaten fehlen")
-	}
-	if err := s.waitForRequestSlot(); err != nil {
-		return nil, err
+		return nil, nil, fmt.Errorf("Stationkoordinaten fehlen")
 	}
 	query := url.Values{}
-	query.Set("geocode", fmt.Sprintf("%.6f,%.6f", latitude, longitude))
-	query.Set("format", "json")
-	query.Set("units", weatherProviderUnits(settings.Units))
-	query.Set("language", "de-DE")
-	query.Set("apiKey", settings.APIKey)
-	request, err := http.NewRequestWithContext(s.ctx, http.MethodGet, weatherDailyForecastEndpoint+"?"+query.Encode(), nil)
+	query.Set("latitude", fmt.Sprintf("%.6f", latitude))
+	query.Set("longitude", fmt.Sprintf("%.6f", longitude))
+	query.Set("hourly", "temperature_2m,apparent_temperature,precipitation_probability,precipitation,cloud_cover,dew_point_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,pressure_msl,weather_code")
+	query.Set("daily", "sunrise,sunset")
+	query.Set("forecast_hours", "24")
+	query.Set("forecast_days", "3")
+	query.Set("timezone", "auto")
+	query.Set("temperature_unit", openMeteoTemperatureUnit(settings.Units))
+	query.Set("wind_speed_unit", openMeteoWindUnit(settings.Units))
+	query.Set("precipitation_unit", openMeteoPrecipitationUnit(settings.Units))
+	request, err := http.NewRequestWithContext(s.ctx, http.MethodGet, openMeteoForecastEndpoint+"?"+query.Encode(), nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	response, err := s.client.Do(request)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
-		return nil, fmt.Errorf("Weather Underground Tagesprognose antwortet mit HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(body)))
+		return nil, nil, fmt.Errorf("Open-Meteo antwortet mit HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(body)))
 	}
-	var payload weatherDailyForecastResponse
+	var payload openMeteoForecastResponse
 	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	sunTimes := normalizeSunTimes(payload)
+	forecast := normalizeOpenMeteoHourlyForecast(payload.Hourly, settings.Units)
+	sunTimes := normalizeSunTimes(payload.Daily)
+	if len(forecast) == 0 {
+		return nil, nil, fmt.Errorf("Open-Meteo lieferte keine stündlichen Forecast-Daten")
+	}
 	if len(sunTimes) != 3 {
-		return nil, fmt.Errorf("Tagesprognose lieferte keine vollständigen Sonnenzeiten für drei Tage")
+		return nil, nil, fmt.Errorf("Open-Meteo lieferte keine vollständigen Sonnenzeiten für drei Tage")
 	}
-	return sunTimes, nil
+	return forecast, sunTimes, nil
 }
 
-// @brief Joins daily forecast arrays into local sunrise/sunset values.
-// @param[in] payload Decoded daily forecast response.
+// @brief Joins Open-Meteo daily arrays into local sunrise/sunset values.
+// @param[in] payload Daily section of the decoded Open-Meteo forecast response.
 // @return Up to three complete entries, or an empty slice for incomplete arrays.
-func normalizeSunTimes(payload weatherDailyForecastResponse) []SunTimes {
-	count := len(payload.ValidTime)
-	if len(payload.SunriseTime) < count {
-		count = len(payload.SunriseTime)
+func normalizeSunTimes(payload openMeteoDailyResponse) []SunTimes {
+	count := len(payload.Time)
+	if len(payload.Sunrise) < count {
+		count = len(payload.Sunrise)
 	}
-	if len(payload.SunsetTime) < count {
-		count = len(payload.SunsetTime)
+	if len(payload.Sunset) < count {
+		count = len(payload.Sunset)
 	}
 	if count > 3 {
 		count = 3
@@ -579,119 +608,135 @@ func normalizeSunTimes(payload weatherDailyForecastResponse) []SunTimes {
 	result := make([]SunTimes, count)
 	for index := 0; index < count; index++ {
 		result[index] = SunTimes{
-			Date:    payload.ValidTime[index],
-			Sunrise: payload.SunriseTime[index],
-			Sunset:  payload.SunsetTime[index],
+			Date:    payload.Time[index],
+			Sunrise: payload.Sunrise[index],
+			Sunset:  payload.Sunset[index],
 		}
 	}
 	return result
 }
 
-// @brief Fetches and normalizes the next 24 hourly forecast entries.
+// @brief Converts Open-Meteo hourly arrays into the stable frontend forecast contract.
 // @details
-// The endpoint uses the station coordinates returned by the current-observation
-// request. The provider response is array-based, so each index is converted
-// into one stable frontend row while missing optional arrays fall back to zero
-// values. Only the next 24 entries are retained and persisted.
-// @param[in] settings Active Weather Underground settings.
-// @param[in] latitude Station latitude from the current observation.
-// @param[in] longitude Station longitude from the current observation.
-// @return Normalized hourly forecast rows or an error from the provider request.
-func (s *WeatherService) fetchHourlyForecast(settings WeatherSettings, latitude, longitude float64) ([]HourlyForecast, error) {
-	if latitude == 0 && longitude == 0 {
-		return nil, fmt.Errorf("Stationkoordinaten fehlen")
-	}
-	if err := s.waitForRequestSlot(); err != nil {
-		return nil, err
-	}
-	query := url.Values{}
-	query.Set("geocode", fmt.Sprintf("%.6f,%.6f", latitude, longitude))
-	query.Set("format", "json")
-	query.Set("units", weatherProviderUnits(settings.Units))
-	query.Set("language", "de-DE")
-	query.Set("apiKey", settings.APIKey)
-	request, err := http.NewRequestWithContext(s.ctx, http.MethodGet, weatherHourlyForecastEndpoint+"?"+query.Encode(), nil)
-	if err != nil {
-		return nil, err
-	}
-	response, err := s.client.Do(request)
-	if err != nil {
-		return nil, err
-	}
-	defer response.Body.Close()
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
-		return nil, fmt.Errorf("Weather Underground Forecast antwortet mit HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(body)))
-	}
-	var payload weatherHourlyForecastResponse
-	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
-		return nil, err
-	}
-	return normalizeHourlyForecast(payload, settings.Units), nil
-}
-
-// @brief Enforces the configured provider request spacing before an API call.
-// @return Error when the service context is canceled while waiting.
-func (s *WeatherService) waitForRequestSlot() error {
-	s.mu.RLock()
-	requestsPerMinute := s.settings.MaxRequestsPerMinute
-	lastRequest := s.lastRequest
-	s.mu.RUnlock()
-	if requestsPerMinute < 1 {
-		requestsPerMinute = 1
-	}
-	minimum := time.Duration((60+requestsPerMinute-1)/requestsPerMinute) * time.Second
-	wait := minimum - time.Since(lastRequest)
-	if lastRequest.IsZero() || wait <= 0 {
-		s.mu.Lock()
-		s.lastRequest = time.Now()
-		s.mu.Unlock()
-		return nil
-	}
-	timer := time.NewTimer(wait)
-	defer timer.Stop()
-	select {
-	case <-timer.C:
-		s.mu.Lock()
-		s.lastRequest = time.Now()
-		s.mu.Unlock()
-		return nil
-	case <-s.ctx.Done():
-		return s.ctx.Err()
-	}
-}
-
-// @brief Converts the provider's parallel hourly arrays into frontend rows.
-// @param[in] payload Decoded hourly forecast response.
-// @param[in] units Active unit system used for display labels.
-// @return At most 24 normalized hourly forecast entries.
-func normalizeHourlyForecast(payload weatherHourlyForecastResponse, units string) []HourlyForecast {
-	count := len(payload.ValidTime)
+// All selected weather variables are normalized by their shared timestamp index.
+// A row is produced only for a timestamp; absent optional values receive safe
+// zero or placeholder values. Open-Meteo returns wind direction in degrees, so
+// it is converted to a German compass abbreviation. Sea-level pressure is
+// converted from hPa to inHg for imperial display because the API supplies hPa.
+// @param[in] payload Decoded hourly section from Open-Meteo.
+// @param[in] units Active UI unit system, either metric or imperial.
+// @return Up to 24 normalized hourly forecast entries.
+func normalizeOpenMeteoHourlyForecast(payload openMeteoHourlyResponse, units string) []HourlyForecast {
+	count := len(payload.Time)
 	if count > 24 {
 		count = 24
 	}
 	forecast := make([]HourlyForecast, 0, count)
 	for index := 0; index < count; index++ {
+		pressure := numberAt(payload.Pressure, index)
+		pressureUnit := "hPa"
+		if units == "imperial" {
+			pressure /= 33.8638866667
+			pressureUnit = "inHg"
+		}
 		forecast = append(forecast, HourlyForecast{
-			ValidTime:       payload.ValidTime[index],
-			Condition:       valueAt(payload.WxPhraseLong, index),
+			ValidTime:       payload.Time[index],
+			Condition:       openMeteoWeatherCode(numberAt(payload.WeatherCode, index)),
 			Temperature:     numberAt(payload.Temperature, index),
-			FeelsLike:       numberAt(payload.TemperatureFeelsLike, index),
+			FeelsLike:       numberAt(payload.FeelsLike, index),
 			PrecipChance:    numberAt(payload.PrecipChance, index),
-			PrecipAmount:    numberAt(payload.QPF, index),
+			PrecipAmount:    numberAt(payload.Precipitation, index),
 			CloudCover:      numberAt(payload.CloudCover, index),
 			DewPoint:        numberAt(payload.DewPoint, index),
-			Humidity:        numberAt(payload.RelativeHumidity, index),
+			Humidity:        numberAt(payload.Humidity, index),
 			WindSpeed:       numberAt(payload.WindSpeed, index),
-			WindDirection:   valueAt(payload.WindDirectionCardinal, index),
-			Pressure:        numberAt(payload.PressureMeanSeaLevel, index),
+			WindDirection:   openMeteoWindDirection(numberAt(payload.WindDirection, index)),
+			Pressure:        pressure,
 			TemperatureUnit: map[bool]string{true: "°F", false: "°C"}[units == "imperial"],
 			WindUnit:        map[bool]string{true: "mph", false: "km/h"}[units == "imperial"],
-			PressureUnit:    map[bool]string{true: "inHg", false: "hPa"}[units == "imperial"],
+			PressureUnit:    pressureUnit,
 			PrecipUnit:      map[bool]string{true: "in", false: "mm"}[units == "imperial"],
 		})
 	}
 	return forecast
+}
+
+// @brief Returns an Open-Meteo request temperature unit for the selected UI units.
+// @param[in] units UI unit system.
+// @return Open-Meteo temperature_unit query value.
+func openMeteoTemperatureUnit(units string) string {
+	if units == "imperial" {
+		return "fahrenheit"
+	}
+	return "celsius"
+}
+
+// @brief Returns an Open-Meteo request wind unit for the selected UI units.
+// @param[in] units UI unit system.
+// @return Open-Meteo wind_speed_unit query value.
+func openMeteoWindUnit(units string) string {
+	if units == "imperial" {
+		return "mph"
+	}
+	return "kmh"
+}
+
+// @brief Returns an Open-Meteo request precipitation unit for the selected UI units.
+// @param[in] units UI unit system.
+// @return Open-Meteo precipitation_unit query value.
+func openMeteoPrecipitationUnit(units string) string {
+	if units == "imperial" {
+		return "inch"
+	}
+	return "mm"
+}
+
+// @brief Maps Open-Meteo WMO weather codes to concise German condition labels.
+// @param[in] code Numeric WMO weather code returned by Open-Meteo.
+// @return German condition phrase, or a neutral placeholder for unknown codes.
+func openMeteoWeatherCode(code float64) string {
+	switch int(code) {
+	case 0:
+		return "Klarer Himmel"
+	case 1:
+		return "Überwiegend klar"
+	case 2:
+		return "Teilweise bewölkt"
+	case 3:
+		return "Bedeckt"
+	case 45, 48:
+		return "Nebel"
+	case 51, 53, 55:
+		return "Nieselregen"
+	case 56, 57:
+		return "Gefrierender Nieselregen"
+	case 61, 63, 65:
+		return "Regen"
+	case 66, 67:
+		return "Gefrierender Regen"
+	case 71, 73, 75, 77:
+		return "Schneefall"
+	case 80, 81, 82:
+		return "Regenschauer"
+	case 85, 86:
+		return "Schneeschauer"
+	case 95, 96, 99:
+		return "Gewitter"
+	default:
+		return "—"
+	}
+}
+
+// @brief Converts a wind-bearing angle to a German compass abbreviation.
+// @param[in] degrees Clockwise bearing in degrees, where 0 points north.
+// @return One of 16 compass directions, or a placeholder for invalid input.
+func openMeteoWindDirection(degrees float64) string {
+	if degrees < 0 || degrees > 360 {
+		return "—"
+	}
+	directions := [...]string{"N", "NNO", "NO", "ONO", "O", "OSO", "SO", "SSO", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"}
+	index := int((degrees+11.25)/22.5) % len(directions)
+	return directions[index]
 }
 
 func numberAt(values []float64, index int) float64 {
