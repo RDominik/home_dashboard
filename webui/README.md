@@ -27,6 +27,8 @@ Ziel: Einfache Weboberfläche mit Seitenleiste, um verschiedene Dashboards anzuz
 	- Steuerung fur die Huhnerklappe (manuell + Schedule).
 	- UI-State Synchronisierung mit Backend (`/api/huehnerklappe/ui-state`).
 	- Schedule-Konfiguration inklusive Zeitstempel, Aktionen und Verlauf.
+	- Persistierter Testmodus mit einstellbarem Intervall (1–1440 Minuten) und täglichem Zeitfenster in der Schedule-Zeitzone; die erste Aktion ist Öffnen nach Ablauf des ersten Intervalls, danach wechseln Öffnen und Schließen.
+	- Das Zeitfenster umfasst den Start, aber nicht das Ende und kann Mitternacht überschreiten. Bei aktivem Timestamp-Schedule pausiert der Testmodus; ein bei nicht verfügbarem Controller fälliger Einzelauftrag wird bis zur Wiederverbindung gehalten.
 
 - `Heating.tsx` (+ `Heating.css`)
 	- ETA-Heizungsansicht.

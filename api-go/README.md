@@ -19,8 +19,10 @@ Backend components (folder map)
 
 - `chickenDoor/`
 	- Huhnerklappe domain logic (manual control, schedule, wake/sleep flow).
-	- Persists UI/schedule state in bbolt (including timestamps, actions, auto-stop, history).
+	- Persists UI/schedule state in bbolt (including timestamps, actions, auto-stop, history, and test-mode interval/window/direction).
 	- Provides endpoints used by the Huehnerklappe UI (status, ui-state, schedule updates, commands).
+	- The test mode waits one full interval before its first open action, then alternates open/close after each interval inside the configured daily schedule-timezone window (inclusive start, exclusive end; midnight crossing supported).
+	- It pauses while the timestamp schedule is active, retains one due action while the controller is unavailable, and uses the existing motor auto-stop handling. Its enable flag, interval, window, next direction, and pending deadline are stored in bbolt and exposed by `/api/huehnerklappe/ui-state` and `/api/huehnerklappe/status`.
 
 - `wallbox/`
 	- Wallbox domain logic and REST/MQTT mapping.

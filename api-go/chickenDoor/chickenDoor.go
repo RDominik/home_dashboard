@@ -27,6 +27,11 @@ const stateKey = "state"
 
 const defaultMotorAutoStopSeconds = 15
 
+// @brief Represents the consolidated ChickenDoor device and test-mode status.
+// @details
+// The response combines live MQTT values with persisted fallbacks and exposes
+// the test mode's activation, daily-window eligibility, upcoming action, and
+// operational state for the page's status panel.
 type StatusResponse struct {
 	Position         string                 `json:"position"`
 	LastAction       string                 `json:"lastAction"`
@@ -47,6 +52,16 @@ type StatusResponse struct {
 	OnlineAtMs       int64                  `json:"onlineAtMs,omitempty"`
 	WakeDeltaMs      int64                  `json:"wakeDeltaMs,omitempty"`
 	ScheduleHistory  []ScheduleHistoryEntry `json:"scheduleHistory,omitempty"`
+	// TestModeEnabled reports the persisted explicit enable selection.
+	TestModeEnabled bool `json:"testModeEnabled"`
+	// TestModeInWindow indicates whether current schedule-local time is eligible.
+	TestModeInWindow bool `json:"testModeInWindow"`
+	// TestModeNextAction names the direction that will be sent next.
+	TestModeNextAction string `json:"testModeNextAction,omitempty"`
+	// TestModeNextAt is the local display time for the next action deadline.
+	TestModeNextAt string `json:"testModeNextAt,omitempty"`
+	// TestModeState distinguishes disabled, paused, out-of-window, and active states.
+	TestModeState string `json:"testModeState"`
 }
 
 // @brief Represents a single execution cycle in the schedule history.
@@ -119,6 +134,19 @@ type ChickenDoor struct {
 	sleepUntil                string
 	controlMode               string
 	historyExpanded           bool
+	// Test-mode settings persist the explicit enable flag and minute interval
+	// independently from the timestamp schedule; schedule activity pauses tests.
+	testModeEnabled bool
+	// testModeIntervalMinutes is the delay between successful alternating actions.
+	testModeIntervalMinutes int
+	// testModeStartTime is the inclusive daily start boundary in schedule timezone.
+	testModeStartTime string
+	// testModeEndTime is the exclusive daily end boundary in schedule timezone.
+	testModeEndTime string
+	// testModeNextAction is the next alternating motor direction, initially open.
+	testModeNextAction string
+	// testModeNextAt persists the next eligible action deadline across restarts.
+	testModeNextAt time.Time
 	// motorRunningSince stores the timestamp when the motor was commanded or detected to start moving.
 	motorRunningSince time.Time
 	// motorRunningAction stores the active motor command direction ("open", "close", "stop").
@@ -157,7 +185,19 @@ type persistedState struct {
 	ScheduleSleepPending  bool            `json:"scheduleSleepPending,omitempty"`
 	// ScheduleEarlyWakePending persists whether the pending sleep exists solely
 	// because the controller woke before its planned schedule timestamp.
-	ScheduleEarlyWakePending  bool                   `json:"scheduleEarlyWakePending,omitempty"`
+	ScheduleEarlyWakePending bool `json:"scheduleEarlyWakePending,omitempty"`
+	// TestModeEnabled stores the explicit test-mode enable selection.
+	TestModeEnabled bool `json:"testModeEnabled"`
+	// TestModeIntervalMinutes stores the configured whole-minute action interval.
+	TestModeIntervalMinutes int `json:"testModeIntervalMinutes"`
+	// TestModeStartTime stores the inclusive local HH:MM window start.
+	TestModeStartTime string `json:"testModeStartTime"`
+	// TestModeEndTime stores the exclusive local HH:MM window end.
+	TestModeEndTime string `json:"testModeEndTime"`
+	// TestModeNextAction stores the next direction so alternation survives restart.
+	TestModeNextAction string `json:"testModeNextAction"`
+	// TestModeNextAt stores the RFC3339 deadline; empty means the interval is unarmed.
+	TestModeNextAt            string                 `json:"testModeNextAt,omitempty"`
 	ScheduleHistory           []ScheduleHistoryEntry `json:"scheduleHistory"`
 	SleepTime                 int                    `json:"sleepTime"`
 	MotorAutoStopSeconds      int                    `json:"motorAutoStopSeconds,omitempty"`
@@ -189,6 +229,14 @@ type uiStateRequest struct {
 	ScheduleTimestamps        []string        `json:"scheduleTimestamps"`
 	ScheduleEntries           []ScheduleEntry `json:"scheduleEntries"`
 	AwakeSeconds              int             `json:"awakeSeconds"`
+	// TestModeEnabled distinguishes an omitted setting from an explicit disable.
+	TestModeEnabled *bool `json:"testModeEnabled,omitempty"`
+	// TestModeIntervalMinutes is the configured test-action interval in minutes.
+	TestModeIntervalMinutes int `json:"testModeIntervalMinutes,omitempty"`
+	// TestModeStartTime is the local HH:MM daily window start.
+	TestModeStartTime string `json:"testModeStartTime,omitempty"`
+	// TestModeEndTime is the local HH:MM daily window end.
+	TestModeEndTime string `json:"testModeEndTime,omitempty"`
 }
 
 // @brief Clamps motor auto-stop setting to the allowed range.
@@ -297,6 +345,24 @@ func (h *ChickenDoor) loadPersistedState() {
 		}
 	}
 	h.scheduleActive = state.ScheduleActive
+	h.testModeEnabled = state.TestModeEnabled
+	if state.TestModeIntervalMinutes >= 1 && state.TestModeIntervalMinutes <= 1440 {
+		h.testModeIntervalMinutes = state.TestModeIntervalMinutes
+	}
+	if isValidScheduleTimestamp(state.TestModeStartTime) && len(state.TestModeStartTime) == 5 {
+		h.testModeStartTime = state.TestModeStartTime
+	}
+	if isValidScheduleTimestamp(state.TestModeEndTime) && len(state.TestModeEndTime) == 5 {
+		h.testModeEndTime = state.TestModeEndTime
+	}
+	if state.TestModeNextAction == "open" || state.TestModeNextAction == "close" {
+		h.testModeNextAction = state.TestModeNextAction
+	}
+	if state.TestModeNextAt != "" {
+		if parsed, err := time.Parse(time.RFC3339, state.TestModeNextAt); err == nil {
+			h.testModeNextAt = parsed
+		}
+	}
 	h.pendingScheduleAction = state.PendingScheduleAction
 	h.scheduleSleepPending = state.ScheduleSleepPending
 	h.scheduleEarlyWakePending = state.ScheduleEarlyWakePending
@@ -357,6 +423,10 @@ func (h *ChickenDoor) persistState() {
 	}
 
 	h.mu.Lock()
+	testModeNextAt := ""
+	if !h.testModeNextAt.IsZero() {
+		testModeNextAt = h.testModeNextAt.Format(time.RFC3339)
+	}
 	state := persistedState{
 		ScheduleAwakeSeconds:      h.scheduleAwakeSeconds,
 		ScheduleTimestamps:        append([]string(nil), h.scheduleTimestamps...),
@@ -365,6 +435,12 @@ func (h *ChickenDoor) persistState() {
 		PendingScheduleAction:     h.pendingScheduleAction,
 		ScheduleSleepPending:      h.scheduleSleepPending,
 		ScheduleEarlyWakePending:  h.scheduleEarlyWakePending,
+		TestModeEnabled:           h.testModeEnabled,
+		TestModeIntervalMinutes:   h.testModeIntervalMinutes,
+		TestModeStartTime:         h.testModeStartTime,
+		TestModeEndTime:           h.testModeEndTime,
+		TestModeNextAction:        h.testModeNextAction,
+		TestModeNextAt:            testModeNextAt,
 		ScheduleHistory:           append([]ScheduleHistoryEntry(nil), h.scheduleHistory...),
 		SleepTime:                 h.sleepTime,
 		MotorAutoStopOpenSeconds:  h.motorAutoStopOpenSeconds,
@@ -412,6 +488,10 @@ func New(mqttManager *mqtt.Manager) *ChickenDoor {
 		done:                      make(chan struct{}),
 		motorAutoStopOpenSeconds:  defaultMotorAutoStopSeconds,
 		motorAutoStopCloseSeconds: defaultMotorAutoStopSeconds,
+		testModeIntervalMinutes:   30,
+		testModeStartTime:         "08:00",
+		testModeEndTime:           "20:00",
+		testModeNextAction:        "open",
 	}
 	h.loadPersistedState()
 	return h
@@ -858,24 +938,40 @@ func (h *ChickenDoor) StatusHandler(w http.ResponseWriter, r *http.Request) {
 	historyCopy := append([]ScheduleHistoryEntry(nil), h.scheduleHistory...)
 
 	status := StatusResponse{
-		Position:         doorPos,
-		LastAction:       engineAction,
-		Battery:          battery,
-		WakeReason:       wakeReason,
-		ControllerState:  controllerState,
-		SleepState:       sleepState,
-		IP:               ip,
-		Charging:         charging,
-		LimitClose:       limitClose,
-		LimitOpen:        limitOpen,
-		ScheduleActive:   h.scheduleActive,
-		ScheduleTimezone: scheduleNow().Location().String(),
-		ServerNowMs:      time.Now().UnixMilli(),
-		SleepCommandAtMs: unixMillisOrZero(h.lastSleepCommandAt),
-		SleepingAtMs:     unixMillisOrZero(h.sleepingAt),
-		OnlineAtMs:       unixMillisOrZero(h.onlineAt),
-		WakeDeltaMs:      h.wakeDeltaMs,
-		ScheduleHistory:  historyCopy,
+		Position:           doorPos,
+		LastAction:         engineAction,
+		Battery:            battery,
+		WakeReason:         wakeReason,
+		ControllerState:    controllerState,
+		SleepState:         sleepState,
+		IP:                 ip,
+		Charging:           charging,
+		LimitClose:         limitClose,
+		LimitOpen:          limitOpen,
+		ScheduleActive:     h.scheduleActive,
+		ScheduleTimezone:   scheduleNow().Location().String(),
+		ServerNowMs:        time.Now().UnixMilli(),
+		SleepCommandAtMs:   unixMillisOrZero(h.lastSleepCommandAt),
+		SleepingAtMs:       unixMillisOrZero(h.sleepingAt),
+		OnlineAtMs:         unixMillisOrZero(h.onlineAt),
+		WakeDeltaMs:        h.wakeDeltaMs,
+		ScheduleHistory:    historyCopy,
+		TestModeEnabled:    h.testModeEnabled,
+		TestModeNextAction: h.testModeNextAction,
+		TestModeNextAt:     formatTestModeTime(h.testModeNextAt),
+	}
+	status.TestModeInWindow = isWithinTestModeWindow(scheduleNow(), h.testModeStartTime, h.testModeEndTime)
+	switch {
+	case !h.testModeEnabled:
+		status.TestModeState = "disabled"
+	case h.scheduleActive:
+		status.TestModeState = "paused_schedule"
+	case !status.TestModeInWindow:
+		status.TestModeState = "outside_window"
+	case normalizeControllerState(controllerState) != "online":
+		status.TestModeState = "waiting_controller"
+	default:
+		status.TestModeState = "active"
 	}
 	h.mu.Unlock()
 
@@ -933,6 +1029,12 @@ func (h *ChickenDoor) UIStateHandler(w http.ResponseWriter, r *http.Request) {
 			"scheduleEntries":           append([]ScheduleEntry(nil), h.scheduleEntries...),
 			"awakeSeconds":              h.scheduleAwakeSeconds,
 			"scheduleActive":            h.scheduleActive,
+			"testModeEnabled":           h.testModeEnabled,
+			"testModeIntervalMinutes":   h.testModeIntervalMinutes,
+			"testModeStartTime":         h.testModeStartTime,
+			"testModeEndTime":           h.testModeEndTime,
+			"testModeNextAction":        h.testModeNextAction,
+			"testModeNextAt":            formatTestModeTime(h.testModeNextAt),
 		}
 		h.mu.Unlock()
 		jsonResponse(w, response)
@@ -943,8 +1045,35 @@ func (h *ChickenDoor) UIStateHandler(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, http.StatusBadRequest, "Ungültiger JSON body")
 			return
 		}
+		if req.TestModeIntervalMinutes < 0 || req.TestModeIntervalMinutes > 1440 {
+			jsonError(w, http.StatusBadRequest, "testModeIntervalMinutes muss zwischen 1 und 1440 liegen")
+			return
+		}
+		if req.TestModeStartTime != "" && !isValidTestModeTime(req.TestModeStartTime) {
+			jsonError(w, http.StatusBadRequest, "testModeStartTime muss im Format HH:MM angegeben werden")
+			return
+		}
+		if req.TestModeEndTime != "" && !isValidTestModeTime(req.TestModeEndTime) {
+			jsonError(w, http.StatusBadRequest, "testModeEndTime muss im Format HH:MM angegeben werden")
+			return
+		}
 
 		h.mu.Lock()
+		if req.TestModeIntervalMinutes > 0 {
+			h.testModeIntervalMinutes = req.TestModeIntervalMinutes
+		}
+		if req.TestModeStartTime != "" {
+			h.testModeStartTime = req.TestModeStartTime
+		}
+		if req.TestModeEndTime != "" {
+			h.testModeEndTime = req.TestModeEndTime
+		}
+		if req.TestModeEnabled != nil {
+			h.testModeEnabled = *req.TestModeEnabled
+			// A fresh enable starts a complete interval; disabling clears the old
+			// deadline so a later activation cannot replay an overdue command.
+			h.testModeNextAt = time.Time{}
+		}
 		h.sleepTime = req.SleepTime
 		if req.MotorAutoStopOpenSeconds > 0 {
 			h.motorAutoStopOpenSeconds = clampMotorAutoStopSeconds(req.MotorAutoStopOpenSeconds)
@@ -1048,6 +1177,7 @@ func (cd *ChickenDoor) runLoop() {
 			return
 		case <-ticker.C:
 			cd.scheduleTick()
+			cd.testModeTick()
 			cd.autoStopTick()
 		}
 	}

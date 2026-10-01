@@ -42,6 +42,11 @@ type HuehnerklappeStatus = {
   onlineAtMs?: number
   wakeDeltaMs?: number
   scheduleHistory?: ScheduleHistoryEntry[]
+  testModeEnabled?: boolean
+  testModeInWindow?: boolean
+  testModeNextAction?: string
+  testModeNextAt?: string
+  testModeState?: string
 }
 
 type UiStateResponse = {
@@ -56,6 +61,10 @@ type UiStateResponse = {
   scheduleEntries?: Array<{ timestamp?: string; action?: ScheduleAction }>
   awakeSeconds?: number
   historyExpanded?: boolean
+  testModeEnabled?: boolean
+  testModeIntervalMinutes?: number
+  testModeStartTime?: string
+  testModeEndTime?: string
 }
 
 type SetCommandResponse = {
@@ -68,6 +77,32 @@ type PickerDraft = {
   hour: string
   minute: string
   second: string
+}
+
+/**
+ * @brief Converts the backend test-mode lifecycle state into a concise German label.
+ * @param state Raw status enum returned by the ChickenDoor status endpoint.
+ * @return Human-readable status for the device status panel.
+ */
+function testModeStatusLabel(state?: string): string {
+  switch (state) {
+    case 'active': return 'aktiv'
+    case 'paused_schedule': return 'pausiert (Schedule aktiv)'
+    case 'outside_window': return 'außerhalb Zeitfenster'
+    case 'waiting_controller': return 'warte auf Controller'
+    case 'disabled': return 'inaktiv'
+    default: return '—'
+  }
+}
+
+/**
+ * @brief Converts the next test-mode direction into its German UI label.
+ * @param action Next normalized motor action returned by the backend.
+ * @return German action text, defaulting to opening before the first action.
+ */
+function testModeActionLabel(action?: string): string {
+  if (action === 'close') return 'Schließen'
+  return 'Öffnen'
 }
 
 export default function Huehnerklappe() {
@@ -83,6 +118,10 @@ export default function Huehnerklappe() {
   const [pickerIndex, setPickerIndex] = useState<number | null>(null)
   const [pickerDraft, setPickerDraft] = useState<PickerDraft>({ hour: '00', minute: '00', second: '00' })
   const [historyExpanded, setHistoryExpanded] = useState(false)
+  const [testModeEnabled, setTestModeEnabled] = useState(false)
+  const [testModeIntervalMinutes, setTestModeIntervalMinutes] = useState(30)
+  const [testModeStartTime, setTestModeStartTime] = useState('08:00')
+  const [testModeEndTime, setTestModeEndTime] = useState('20:00')
   const [status, setStatus] = useState<HuehnerklappeStatus | null>(null)
   const [sending, setSending] = useState(false)
   const [feedback, setFeedback] = useState<Feedback | null>(null)
@@ -178,6 +217,18 @@ export default function Huehnerklappe() {
       if (typeof data.historyExpanded === 'boolean') {
         setHistoryExpanded(data.historyExpanded)
       }
+      if (typeof data.testModeEnabled === 'boolean') {
+        setTestModeEnabled(data.testModeEnabled)
+      }
+      if (Number.isFinite(data.testModeIntervalMinutes) && Number(data.testModeIntervalMinutes) >= 1) {
+        setTestModeIntervalMinutes(Math.min(1440, Number(data.testModeIntervalMinutes)))
+      }
+      if (typeof data.testModeStartTime === 'string' && data.testModeStartTime) {
+        setTestModeStartTime(data.testModeStartTime)
+      }
+      if (typeof data.testModeEndTime === 'string' && data.testModeEndTime) {
+        setTestModeEndTime(data.testModeEndTime)
+      }
     } catch {
       // Ignore transient load errors.
     }
@@ -220,6 +271,10 @@ export default function Huehnerklappe() {
       })),
       awakeSeconds,
       historyExpanded,
+      testModeEnabled,
+      testModeIntervalMinutes,
+      testModeStartTime,
+      testModeEndTime,
     }
 
     const timer = setTimeout(() => {
@@ -231,7 +286,7 @@ export default function Huehnerklappe() {
     }, 250)
 
     return () => clearTimeout(timer)
-  }, [uiLoaded, sleepTime, motorAutoStopOpenSeconds, motorAutoStopCloseSeconds, sleepUntil, controlMode, scheduleActive, scheduleTimestamps, scheduleActions, awakeSeconds, historyExpanded])
+  }, [uiLoaded, sleepTime, motorAutoStopOpenSeconds, motorAutoStopCloseSeconds, sleepUntil, controlMode, scheduleActive, scheduleTimestamps, scheduleActions, awakeSeconds, historyExpanded, testModeEnabled, testModeIntervalMinutes, testModeStartTime, testModeEndTime])
 
   const sendCommand = async (key: string, value: string | number | null = null, successMessage: string | null = null) => {
     setSending(true)
@@ -608,6 +663,8 @@ export default function Huehnerklappe() {
             <StatusItem label="Sleep-ACK" value={status.sleepState ?? '—'} />
             <StatusItem label="Weckgrund" value={wakeReason ?? '—'} />
             <StatusItem label="Schedule aktiv" value={status.scheduleActive ? 'ja' : 'nein'} />
+            <StatusItem label="Testmodus" value={testModeStatusLabel(status.testModeState)} />
+            <StatusItem label="Nächste Testaktion" value={status.testModeEnabled ? `${testModeActionLabel(status.testModeNextAction)} · ${status.testModeNextAt || 'Intervall läuft'}` : '—'} />
             <StatusItem label="Schedule-Zeitzone" value={status.scheduleTimezone ?? '—'} />
             <StatusItem label="Sleep gesendet" value={formatStatusTimestamp(status.sleepCommandAtMs)} />
             <StatusItem label="Sleeping seit" value={formatStatusTimestamp(status.sleepingAtMs)} />
@@ -636,6 +693,59 @@ export default function Huehnerklappe() {
           <p style={{ marginTop: -6, marginBottom: 12, color: '#6b7280', fontSize: 12 }}>
             Wechsel auf "Manuell" deaktiviert sofort. Aktivierung erfolgt erst mit "Timestamp-Schedule senden".
           </p>
+
+        <div style={{ marginTop: 14, padding: 14, border: '1px solid #d1d5db', borderRadius: 8, background: '#f9fafb' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+            <div>
+              <strong style={{ color: '#374151' }}>Testmodus</strong>
+              <p style={{ margin: '4px 0 0', color: '#6b7280', fontSize: 12 }}>
+                Öffnet nach dem Startintervall, danach wechseln Öffnen und Schließen. Während ein Timestamp-Schedule aktiv ist, pausiert der Testmodus.
+              </p>
+            </div>
+            <button
+              type="button"
+              aria-pressed={testModeEnabled}
+              onClick={() => setTestModeEnabled((enabled) => !enabled)}
+              style={modeSwitchButton(testModeEnabled ? 'schedule' : 'manual')}
+            >
+              {testModeEnabled ? 'Testmodus aktiv' : 'Testmodus inaktiv'}
+            </button>
+          </div>
+          <div style={{ marginTop: 12, display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+            <label style={{ fontSize: 14, color: '#6b7280' }}>
+              Abstand (Minuten, 1–1440):
+              <input
+                type="number"
+                min={1}
+                max={1440}
+                value={testModeIntervalMinutes}
+                onChange={e => setTestModeIntervalMinutes(Math.max(1, Math.min(1440, Number(e.target.value) || 1)))}
+                style={{ marginLeft: 8, padding: '6px 8px', borderRadius: 6, border: '1px solid #e5e7eb', width: 88 }}
+              />
+            </label>
+            <label style={{ fontSize: 14, color: '#6b7280' }}>
+              Start:
+              <input
+                type="time"
+                value={testModeStartTime}
+                onChange={e => setTestModeStartTime(e.target.value)}
+                style={{ marginLeft: 8, padding: '6px 8px', borderRadius: 6, border: '1px solid #e5e7eb' }}
+              />
+            </label>
+            <label style={{ fontSize: 14, color: '#6b7280' }}>
+              Ende:
+              <input
+                type="time"
+                value={testModeEndTime}
+                onChange={e => setTestModeEndTime(e.target.value)}
+                style={{ marginLeft: 8, padding: '6px 8px', borderRadius: 6, border: '1px solid #e5e7eb' }}
+              />
+            </label>
+          </div>
+          <p style={{ margin: '10px 0 0', color: '#6b7280', fontSize: 12 }}>
+            Zeitfenster verwendet die Schedule-Zeitzone; Start ist eingeschlossen, Ende ausgeschlossen. Über Mitternacht laufende Zeitfenster sind möglich.
+          </p>
+        </div>
 
         <div style={{ marginTop: 14, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <label style={{ fontSize: 14, color: '#6b7280' }}>
