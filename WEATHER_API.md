@@ -113,19 +113,18 @@ Forecast records are persisted alongside the observation. A forecast error retai
 
 ## MQTT publication
 
-After a successful Open-Meteo forecast refresh, the backend publishes the three-day sunrise/sunset array as a **retained JSON message** to `nano/esp32/sun-times`. The retained flag lets a sleeping ESP32 receive the most recently stored values after reconnecting. The backend also republishes the persisted snapshot on service startup when one exists.
+After a successful Open-Meteo forecast refresh, the backend publishes each day's sunrise and sunset as separate **retained plain-text** MQTT values. `day1` is today in the Open-Meteo local timezone, followed by `day2` and `day3`. Each payload is an unquoted local ISO-8601 timestamp such as `2026-09-26T07:05`. The retained flag lets a sleeping ESP32 receive the latest time after reconnecting. The backend also republishes all six values from the persisted snapshot on service startup when one exists.
 
-Example payload shape:
+| MQTT topic | Payload |
+| --- | --- |
+| `nano/esp32/suntime/day1/sunrise` | Today's local sunrise timestamp. |
+| `nano/esp32/suntime/day1/sunset` | Today's local sunset timestamp. |
+| `nano/esp32/suntime/day2/sunrise` | Next local day's sunrise timestamp. |
+| `nano/esp32/suntime/day2/sunset` | Next local day's sunset timestamp. |
+| `nano/esp32/suntime/day3/sunrise` | Third local day's sunrise timestamp. |
+| `nano/esp32/suntime/day3/sunset` | Third local day's sunset timestamp. |
 
-```json
-[
-  { "date": "2026-09-25", "sunrise": "2026-09-25T07:03", "sunset": "2026-09-25T19:05" },
-  { "date": "2026-09-26", "sunrise": "2026-09-26T07:05", "sunset": "2026-09-26T19:02" },
-  { "date": "2026-09-27", "sunrise": "2026-09-27T07:06", "sunset": "2026-09-27T19:00" }
-]
-```
-
-The ESP32 firmware must subscribe to this topic and parse the JSON array. Firmware compatibility is outside this Go/Web UI repository.
+The ESP32 firmware must subscribe to these individual topics and parse the plain-text timestamps. Firmware compatibility is outside this Go/Web UI repository.
 
 ## Operational notes
 

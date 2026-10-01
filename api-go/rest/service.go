@@ -3,12 +3,13 @@ package rest
 import (
 	"context"
 	"log"
+	"strconv"
 	"time"
 
 	"webgui-api/mqtt"
 )
 
-const sunTimesMQTTTopic = "nano/esp32/sun-times"
+const sunTimesMQTTPrefix = "nano/esp32/suntime"
 
 // @brief Owns the REST polling lifecycle and its dependent services.
 // @details
@@ -77,18 +78,32 @@ func (rs *RestService) Start(mqttManager *mqtt.Manager) {
 	go rs.runLoop()
 }
 
-// @brief Publishes the cached three-day sunrise/sunset payload to the ESP32.
+// @brief Publishes the cached sunrise/sunset values on six day-specific topics.
 // @details
-// The payload is a JSON array of local date, sunrise, and sunset values on the
-// nano/esp32 MQTT namespace. Empty snapshots are ignored; publication errors
-// are logged without interrupting weather polling.
+// Each local day receives its own retained sunrise and sunset values under
+// nano/esp32/suntime/dayN/{sunrise|sunset}. Retained values let a sleeping
+// ESP32 receive the latest times after reconnecting. Dates remain available in
+// the weather status response; day1/day2/day3 are ordered from today forward.
+// Empty snapshots are ignored, and individual publish failures are logged
+// while remaining topics are still attempted.
 // @param[in] sunTimes Three-day local sunrise/sunset snapshot.
 func (rs *RestService) publishSunTimes(sunTimes []SunTimes) {
 	if len(sunTimes) == 0 || rs.mqttManager == nil {
 		return
 	}
-	if err := rs.mqttManager.PublishRetained(sunTimesMQTTTopic, sunTimes); err != nil {
-		log.Printf("[weather] MQTT sun-times publish failed: %v", err)
+	if len(sunTimes) > 3 {
+		sunTimes = sunTimes[:3]
+	}
+	for index, day := range sunTimes {
+		dayTopic := sunTimesMQTTPrefix + "/day" + strconv.Itoa(index+1)
+		for _, item := range []struct {
+			name  string
+			value string
+		}{{name: "sunrise", value: day.Sunrise}, {name: "sunset", value: day.Sunset}} {
+			if err := rs.mqttManager.PublishRetainedText(dayTopic+"/"+item.name, item.value); err != nil {
+				log.Printf("[weather] MQTT publish failed for %s: %v", dayTopic+"/"+item.name, err)
+			}
+		}
 	}
 }
 

@@ -177,15 +177,31 @@ func (mqtt_manager *Manager) PublishRetained(topic string, value any) error {
 	return mqtt_manager.publish(topic, value, true)
 }
 
-func (mqtt_manager *Manager) publish(topic string, value any, retained bool) error {
-	if mqtt_manager.client == nil {
-		return fmt.Errorf("MQTT client is not initialized")
-	}
+// @brief Veröffentlicht einen retained Textwert unverändert als MQTT-Payload.
+//
+// @details Im Gegensatz zu PublishRetained wird der Text nicht als JSON-String
+// mit Anführungszeichen serialisiert. Das ist für Topics gedacht, deren
+// Verbraucher einen direkten Zeitstempel oder Textwert erwarten.
+//
+// @param topic Das MQTT-Topic, auf dem veröffentlicht werden soll.
+// @param value Der unverändert zu sendende Textwert.
+// @return Fehler oder nil bei Erfolg.
+func (mqtt_manager *Manager) PublishRetainedText(topic string, value string) error {
+	return mqtt_manager.publishPayload(topic, []byte(value), true)
+}
 
+func (mqtt_manager *Manager) publish(topic string, value any, retained bool) error {
 	// Change value to JSON, MQTT cannot handle Go objects directly.
 	payload, err := json.Marshal(value)
 	if err != nil {
 		return fmt.Errorf("mqtt marshal failed for topic %s: %w", topic, err)
+	}
+	return mqtt_manager.publishPayload(topic, payload, retained)
+}
+
+func (mqtt_manager *Manager) publishPayload(topic string, payload []byte, retained bool) error {
+	if mqtt_manager == nil || mqtt_manager.client == nil {
+		return fmt.Errorf("MQTT client is not initialized")
 	}
 
 	var lastErr error
