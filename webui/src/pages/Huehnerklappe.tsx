@@ -5,6 +5,7 @@ import PageHeader from '../components/PageHeader'
 const API = '/api/huehnerklappe'
 
 type ControlMode = 'manual' | 'schedule'
+type ControlTab = ControlMode | 'test'
 type ScheduleAction = 'open' | 'close' | 'stop' | 'none'
 
 type Feedback = {
@@ -111,6 +112,7 @@ export default function Huehnerklappe() {
   const [motorAutoStopCloseSeconds, setMotorAutoStopCloseSeconds] = useState(15)
   const [sleepUntil, setSleepUntil] = useState('')
   const [controlMode, setControlMode] = useState<ControlMode>('manual')
+  const [controlTab, setControlTab] = useState<ControlTab>('manual')
   const [scheduleActive, setScheduleActive] = useState(false)
   const [scheduleTimestamps, setScheduleTimestamps] = useState(['06:30:00', '12:00:00', '18:30:00'])
   const [scheduleActions, setScheduleActions] = useState<ScheduleAction[]>(['none', 'none', 'none'])
@@ -181,10 +183,13 @@ export default function Huehnerklappe() {
       }
       if (data.controlMode === 'manual' || data.controlMode === 'schedule') {
         setControlMode(data.controlMode)
+        setControlTab(data.controlMode)
       } else if (data.scheduleActive) {
         setControlMode('schedule')
+        setControlTab('schedule')
       } else {
         setControlMode('manual')
+        setControlTab('manual')
       }
       if (Array.isArray(data.scheduleTimestamps) && data.scheduleTimestamps.length > 0) {
         const cleaned = data.scheduleTimestamps
@@ -464,10 +469,6 @@ export default function Huehnerklappe() {
     await sendSleepSchedule(scheduleTimestamps, false, false)
   }
 
-  const activateScheduleMode = () => {
-    setControlMode('schedule')
-  }
-
   const setScheduleEnabled = async (nextActive: boolean) => {
     setScheduleActive(nextActive)
     await sendSleepSchedule(scheduleTimestamps, false, nextActive)
@@ -682,71 +683,101 @@ export default function Huehnerklappe() {
       {/* Steuerung */}
       <div style={{ ...cardStyle }}>
         <h3 style={{ marginTop: 0, color: '#374151' }}>🔧 Klappe steuern</h3>
-        <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-          <button type="button" style={modeSwitchButton('manual')} onClick={activateManualMode} disabled={sending}>
-            Manuelle Steuerung aktiv
-          </button>
-          <button type="button" style={modeSwitchButton('schedule')} onClick={activateScheduleMode} disabled={sending}>
-            Sleep-Schedule aktiv
-          </button>
+        <div role="tablist" aria-label="Klappensteuerung" style={{ display: 'flex', gap: 0, borderBottom: '1px solid #d1d5db', marginBottom: 18 }}>
+          {([
+            { id: 'manual', label: 'Manuelle Steuerung' },
+            { id: 'schedule', label: 'Sleep-Schedule' },
+            { id: 'test', label: 'Testmodus' },
+          ] as const).map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              id={`chicken-door-tab-${tab.id}`}
+              aria-selected={controlTab === tab.id}
+              aria-controls={`chicken-door-panel-${tab.id}`}
+              onClick={() => {
+                setControlTab(tab.id)
+                if (tab.id === 'manual' || tab.id === 'schedule') {
+                  // Selecting a tab only changes the visible panel and its
+                  // persisted UI preference; schedule activation stays explicit.
+                  setControlMode(tab.id)
+                }
+              }}
+              style={{
+                padding: '10px 16px',
+                border: 'none',
+                borderBottom: controlTab === tab.id ? '3px solid #b91c1c' : '3px solid transparent',
+                background: 'transparent',
+                color: controlTab === tab.id ? '#263d52' : '#6b7280',
+                fontWeight: controlTab === tab.id ? 700 : 600,
+                cursor: 'pointer',
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
-          <p style={{ marginTop: -6, marginBottom: 12, color: '#6b7280', fontSize: 12 }}>
-            Wechsel auf "Manuell" deaktiviert sofort. Aktivierung erfolgt erst mit "Timestamp-Schedule senden".
-          </p>
 
-        <div style={{ marginTop: 14, padding: 14, border: '1px solid #d1d5db', borderRadius: 8, background: '#f9fafb' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-            <div>
-              <strong style={{ color: '#374151' }}>Testmodus</strong>
-              <p style={{ margin: '4px 0 0', color: '#6b7280', fontSize: 12 }}>
-                Öffnet nach dem Startintervall, danach wechseln Öffnen und Schließen. Während ein Timestamp-Schedule aktiv ist, pausiert der Testmodus.
+        {controlTab === 'test' && (
+          <div id="chicken-door-panel-test" role="tabpanel" aria-labelledby="chicken-door-tab-test">
+            <div style={{ padding: 14, border: '1px solid #d1d5db', borderRadius: 8, background: '#f9fafb' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                <div>
+                  <strong style={{ color: '#374151' }}>Zyklischer Klappentest</strong>
+                  <p style={{ margin: '4px 0 0', color: '#6b7280', fontSize: 12 }}>
+                    Öffnet nach dem Startintervall, danach wechseln Öffnen und Schließen. Während ein Timestamp-Schedule aktiv ist, pausiert der Testmodus.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  aria-pressed={testModeEnabled}
+                  onClick={() => setTestModeEnabled((enabled) => !enabled)}
+                  style={modeSwitchButton(testModeEnabled ? 'schedule' : 'manual')}
+                >
+                  {testModeEnabled ? 'Testmodus aktiv' : 'Testmodus inaktiv'}
+                </button>
+              </div>
+              <div style={{ marginTop: 12, display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+                <label style={{ fontSize: 14, color: '#6b7280' }}>
+                  Abstand (Minuten, 1–1440):
+                  <input
+                    type="number"
+                    min={1}
+                    max={1440}
+                    value={testModeIntervalMinutes}
+                    onChange={e => setTestModeIntervalMinutes(Math.max(1, Math.min(1440, Number(e.target.value) || 1)))}
+                    style={{ marginLeft: 8, padding: '6px 8px', borderRadius: 6, border: '1px solid #e5e7eb', width: 88 }}
+                  />
+                </label>
+                <label style={{ fontSize: 14, color: '#6b7280' }}>
+                  Start:
+                  <input
+                    type="time"
+                    value={testModeStartTime}
+                    onChange={e => setTestModeStartTime(e.target.value)}
+                    style={{ marginLeft: 8, padding: '6px 8px', borderRadius: 6, border: '1px solid #e5e7eb' }}
+                  />
+                </label>
+                <label style={{ fontSize: 14, color: '#6b7280' }}>
+                  Ende:
+                  <input
+                    type="time"
+                    value={testModeEndTime}
+                    onChange={e => setTestModeEndTime(e.target.value)}
+                    style={{ marginLeft: 8, padding: '6px 8px', borderRadius: 6, border: '1px solid #e5e7eb' }}
+                  />
+                </label>
+              </div>
+              <p style={{ margin: '10px 0 0', color: '#6b7280', fontSize: 12 }}>
+                Zeitfenster verwendet die Schedule-Zeitzone; Start ist eingeschlossen, Ende ausgeschlossen. Über Mitternacht laufende Zeitfenster sind möglich.
               </p>
             </div>
-            <button
-              type="button"
-              aria-pressed={testModeEnabled}
-              onClick={() => setTestModeEnabled((enabled) => !enabled)}
-              style={modeSwitchButton(testModeEnabled ? 'schedule' : 'manual')}
-            >
-              {testModeEnabled ? 'Testmodus aktiv' : 'Testmodus inaktiv'}
-            </button>
           </div>
-          <div style={{ marginTop: 12, display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
-            <label style={{ fontSize: 14, color: '#6b7280' }}>
-              Abstand (Minuten, 1–1440):
-              <input
-                type="number"
-                min={1}
-                max={1440}
-                value={testModeIntervalMinutes}
-                onChange={e => setTestModeIntervalMinutes(Math.max(1, Math.min(1440, Number(e.target.value) || 1)))}
-                style={{ marginLeft: 8, padding: '6px 8px', borderRadius: 6, border: '1px solid #e5e7eb', width: 88 }}
-              />
-            </label>
-            <label style={{ fontSize: 14, color: '#6b7280' }}>
-              Start:
-              <input
-                type="time"
-                value={testModeStartTime}
-                onChange={e => setTestModeStartTime(e.target.value)}
-                style={{ marginLeft: 8, padding: '6px 8px', borderRadius: 6, border: '1px solid #e5e7eb' }}
-              />
-            </label>
-            <label style={{ fontSize: 14, color: '#6b7280' }}>
-              Ende:
-              <input
-                type="time"
-                value={testModeEndTime}
-                onChange={e => setTestModeEndTime(e.target.value)}
-                style={{ marginLeft: 8, padding: '6px 8px', borderRadius: 6, border: '1px solid #e5e7eb' }}
-              />
-            </label>
-          </div>
-          <p style={{ margin: '10px 0 0', color: '#6b7280', fontSize: 12 }}>
-            Zeitfenster verwendet die Schedule-Zeitzone; Start ist eingeschlossen, Ende ausgeschlossen. Über Mitternacht laufende Zeitfenster sind möglich.
-          </p>
-        </div>
+        )}
 
+        {(controlTab === 'manual' || controlTab === 'schedule') && (
+        <div>
         <div style={{ marginTop: 14, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <label style={{ fontSize: 14, color: '#6b7280' }}>
             Auto-Stop Öffnen (Sekunden, 1-60):
@@ -775,7 +806,14 @@ export default function Huehnerklappe() {
           </span>
         </div>
 
-        {controlMode === 'manual' && (
+        {controlTab === 'manual' && (
+        <div id="chicken-door-panel-manual" role="tabpanel" aria-labelledby="chicken-door-tab-manual">
+          <p style={{ marginTop: 2, marginBottom: 12, color: '#6b7280', fontSize: 12 }}>
+            Die Registerkarte ändert den aktiven Modus nicht. „Manuelle Steuerung aktiv“ deaktiviert den Timestamp-Schedule ausdrücklich.
+          </p>
+          <button type="button" style={modeSwitchButton('manual')} onClick={activateManualMode} disabled={sending}>
+            Manuelle Steuerung aktivieren
+          </button>
         <div>
           <h4 style={{ marginTop: 16, marginBottom: 10, color: '#374151' }}>Manuelle Steuerung</h4>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -829,10 +867,11 @@ export default function Huehnerklappe() {
           </button>
         </div>
         </div>
+        </div>
         )}
 
-        {controlMode === 'schedule' && (
-        <div>
+        {controlTab === 'schedule' && (
+        <div id="chicken-door-panel-schedule" role="tabpanel" aria-labelledby="chicken-door-tab-schedule">
           <h4 style={{ marginTop: 16, marginBottom: 8, color: selectedTheme.titleColor, fontSize: 18 }}>Sleep-Schedule per Timestamps</h4>
           <p style={{ marginTop: 0, marginBottom: 14, color: selectedTheme.subtitleColor, fontSize: 13 }}>
             Zeiten werden in Reihenfolge gespeichert und nacheinander abgearbeitet.
@@ -1093,6 +1132,8 @@ export default function Huehnerklappe() {
               </table>
             </div>
           )}
+        </div>
+        )}
         </div>
         )}
       </div>

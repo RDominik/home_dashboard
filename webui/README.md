@@ -24,7 +24,7 @@ Ziel: Einfache Weboberfläche mit Seitenleiste, um verschiedene Dashboards anzuz
 	- Energiefluss-Visualisierung (PV/Verbrauch/Batterie).
 
 - `Huehnerklappe.tsx`
-	- Steuerung fur die Huhnerklappe (manuell + Schedule).
+	- Klappenansicht mit gleichrangigen Tabs für manuelle Steuerung, Sleep-Schedule und Testmodus.
 	- UI-State Synchronisierung mit Backend (`/api/huehnerklappe/ui-state`).
 	- Schedule-Konfiguration inklusive Zeitstempel, Aktionen und Verlauf.
 	- Persistierter Testmodus mit einstellbarem Intervall (1–1440 Minuten) und täglichem Zeitfenster in der Schedule-Zeitzone; die erste Aktion ist Öffnen nach Ablauf des ersten Intervalls, danach wechseln Öffnen und Schließen.
