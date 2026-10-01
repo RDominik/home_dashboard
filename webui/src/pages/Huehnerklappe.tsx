@@ -1212,13 +1212,37 @@ function ChickenDoorGraphic({ status }: ChickenDoorGraphicProps) {
             left: 24,
             width: 'calc(100% - 48px)',
             height: '100%',
-            background: '#fff',
-            border: '2px solid #111827',
+            backgroundColor: '#b9783e',
+            backgroundImage: [
+              'linear-gradient(90deg, rgba(72, 35, 14, 0.20), transparent 12%, rgba(255, 222, 165, 0.18) 48%, rgba(72, 35, 14, 0.16))',
+              'repeating-linear-gradient(0deg, transparent 0 34px, rgba(73, 39, 18, 0.48) 34px 37px, rgba(255, 224, 170, 0.22) 38px 40px)',
+              'repeating-linear-gradient(90deg, rgba(255, 226, 175, 0.14) 0 2px, transparent 2px 38px, rgba(67, 35, 17, 0.20) 39px 41px, transparent 42px 76px)',
+              'repeating-linear-gradient(0deg, #c8894d 0 68px, #ad6d38 68px 136px)',
+            ].join(', '),
+            border: '3px solid #70421f',
+            boxShadow: 'inset 0 0 0 2px rgba(255, 220, 165, 0.35), inset 0 8px 14px rgba(67, 35, 17, 0.18)',
             boxSizing: 'border-box',
             transform: visualOpen ? 'translateY(-100%)' : 'translateY(0)',
             transition: motorIsMoving ? `transform ${animationDuration}s ease-in-out` : 'none',
           }} />
         </div>
+      </div>
+      <div
+        role="status"
+        aria-live="polite"
+        style={{
+          width: 'fit-content',
+          margin: '0 auto',
+          padding: '5px 11px',
+          borderRadius: 4,
+          background: visualOpen ? '#dcfce7' : '#fef3c7',
+          color: visualOpen ? '#166534' : '#854d0e',
+          fontSize: 12,
+          fontWeight: 700,
+          letterSpacing: '0.04em',
+        }}
+      >
+        {visualOpen ? 'OFFEN' : 'GESCHLOSSEN'}
       </div>
     </div>
   )
