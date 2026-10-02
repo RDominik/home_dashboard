@@ -772,6 +772,17 @@ export default function Huehnerklappe() {
               <p style={{ margin: '10px 0 0', color: '#6b7280', fontSize: 12 }}>
                 Zeitfenster verwendet die Schedule-Zeitzone; Start ist eingeschlossen, Ende ausgeschlossen. Über Mitternacht laufende Zeitfenster sind möglich.
               </p>
+              <div style={{ marginTop: 14, padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: 6, background: '#fff' }}>
+                <strong style={{ color: '#374151', fontSize: 13 }}>Testlauf-Status: </strong>
+                <span style={{ color: '#374151', fontSize: 13 }}>
+                  {testModeStatusLabel(status?.testModeState)}
+                </span>
+                <div style={{ marginTop: 4, color: '#6b7280', fontSize: 12 }}>
+                  {testModeEnabled
+                    ? `Nächste Aktion: ${testModeActionLabel(status?.testModeNextAction)}${status?.testModeNextAt ? ` um ${status.testModeNextAt}` : ' – Intervall wird gestartet'}. Erster Lauf nach einem vollständigen Intervall; der Controller muss online und der Timestamp-Schedule aus sein.`
+                    : 'Zum Starten den Testmodus oben aktivieren.'}
+                </div>
+              </div>
             </div>
           </div>
         )}
