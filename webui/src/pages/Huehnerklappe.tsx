@@ -23,6 +23,30 @@ type ScheduleHistoryEntry = {
   motorDurationSec?: number
 }
 
+/** @brief Test-mode movement and sleep lifecycle fields returned by the backend. */
+type TestModeHistoryEntry = {
+  /** @brief Issued alternating motor direction, either open or close. */
+  action?: string
+  /** @brief Unix timestamp in milliseconds when the movement started. */
+  actionAtMs?: number
+  /** @brief Raw battery payload captured when the movement started. */
+  batteryPercent?: string
+  /** @brief Final door position after motor movement completed. */
+  endPosition?: string
+  /** @brief Measured motor runtime in seconds. */
+  motorDurationSec?: number
+  /** @brief Configured maximum-awake duration, including motor runtime floor. */
+  maxAwakeSeconds?: number
+  /** @brief Sleep duration sent to the controller in seconds. */
+  sleepSeconds?: number
+  /** @brief Unix timestamp in milliseconds when sleep was commanded. */
+  sleepCommandAtMs?: number
+  /** @brief Unix timestamp in milliseconds when sleeping was acknowledged. */
+  sleepingAtMs?: number
+  /** @brief Unix timestamp in milliseconds when the controller woke online. */
+  wokeUpAtMs?: number
+}
+
 type HuehnerklappeStatus = {
   position?: string
   lastAction?: string
@@ -43,10 +67,12 @@ type HuehnerklappeStatus = {
   onlineAtMs?: number
   wakeDeltaMs?: number
   scheduleHistory?: ScheduleHistoryEntry[]
+  testModeHistory?: TestModeHistoryEntry[]
   testModeEnabled?: boolean
   testModeInWindow?: boolean
   testModeNextAction?: string
   testModeNextAt?: string
+  testModeSleepPending?: boolean
   testModeState?: string
 }
 
@@ -66,6 +92,7 @@ type UiStateResponse = {
   testModeIntervalMinutes?: number
   testModeStartTime?: string
   testModeEndTime?: string
+  testModeMaxAwakeSeconds?: number
 }
 
 type SetCommandResponse = {
@@ -124,6 +151,7 @@ export default function Huehnerklappe() {
   const [testModeIntervalMinutes, setTestModeIntervalMinutes] = useState(30)
   const [testModeStartTime, setTestModeStartTime] = useState('08:00')
   const [testModeEndTime, setTestModeEndTime] = useState('20:00')
+  const [testModeMaxAwakeSeconds, setTestModeMaxAwakeSeconds] = useState(30)
   const [status, setStatus] = useState<HuehnerklappeStatus | null>(null)
   const [sending, setSending] = useState(false)
   const [feedback, setFeedback] = useState<Feedback | null>(null)
@@ -234,6 +262,9 @@ export default function Huehnerklappe() {
       if (typeof data.testModeEndTime === 'string' && data.testModeEndTime) {
         setTestModeEndTime(data.testModeEndTime)
       }
+      if (Number.isFinite(data.testModeMaxAwakeSeconds) && Number(data.testModeMaxAwakeSeconds) >= 1) {
+        setTestModeMaxAwakeSeconds(Math.min(86400, Number(data.testModeMaxAwakeSeconds)))
+      }
     } catch {
       // Ignore transient load errors.
     }
@@ -280,6 +311,7 @@ export default function Huehnerklappe() {
       testModeIntervalMinutes,
       testModeStartTime,
       testModeEndTime,
+      testModeMaxAwakeSeconds,
     }
 
     const timer = setTimeout(() => {
@@ -291,7 +323,7 @@ export default function Huehnerklappe() {
     }, 250)
 
     return () => clearTimeout(timer)
-  }, [uiLoaded, sleepTime, motorAutoStopOpenSeconds, motorAutoStopCloseSeconds, sleepUntil, controlMode, scheduleActive, scheduleTimestamps, scheduleActions, awakeSeconds, historyExpanded, testModeEnabled, testModeIntervalMinutes, testModeStartTime, testModeEndTime])
+  }, [uiLoaded, sleepTime, motorAutoStopOpenSeconds, motorAutoStopCloseSeconds, sleepUntil, controlMode, scheduleActive, scheduleTimestamps, scheduleActions, awakeSeconds, historyExpanded, testModeEnabled, testModeIntervalMinutes, testModeStartTime, testModeEndTime, testModeMaxAwakeSeconds])
 
   const sendCommand = async (key: string, value: string | number | null = null, successMessage: string | null = null) => {
     setSending(true)
@@ -614,6 +646,13 @@ export default function Huehnerklappe() {
     return Array.from({ length: 20 }, (_, idx) => entries[idx] ?? null)
   })()
 
+  const testModeHistoryRows = (() => {
+    const entries = Array.isArray(status?.testModeHistory)
+      ? [...status.testModeHistory].slice(-20).reverse()
+      : []
+    return Array.from({ length: 20 }, (_, idx) => entries[idx] ?? null)
+  })()
+
   const scheduleEntryState = (entry: ScheduleHistoryEntry | null) => {
     if (!entry) {
       return 'leer'
@@ -726,7 +765,7 @@ export default function Huehnerklappe() {
                 <div>
                   <strong style={{ color: '#374151' }}>Zyklischer Klappentest</strong>
                   <p style={{ margin: '4px 0 0', color: '#6b7280', fontSize: 12 }}>
-                    Öffnet nach dem Startintervall, danach wechseln Öffnen und Schließen. Während ein Timestamp-Schedule aktiv ist, pausiert der Testmodus.
+                    Nach jeder Bewegung schläft der Controller für das eingestellte Intervall und wacht zur nächsten wechselnden Öffnen-/Schließen-Aktion auf. Ein aktiver Timestamp-Schedule pausiert den Testmodus.
                   </p>
                 </div>
                 <button
@@ -768,9 +807,20 @@ export default function Huehnerklappe() {
                     style={{ marginLeft: 8, padding: '6px 8px', borderRadius: 6, border: '1px solid #e5e7eb' }}
                   />
                 </label>
+                <label style={{ fontSize: 14, color: '#6b7280' }}>
+                  Max. Wachzeit (Sekunden):
+                  <input
+                    type="number"
+                    min={1}
+                    max={86400}
+                    value={testModeMaxAwakeSeconds}
+                    onChange={e => setTestModeMaxAwakeSeconds(Math.max(1, Math.min(86400, Number(e.target.value) || 1)))}
+                    style={{ marginLeft: 8, padding: '6px 8px', borderRadius: 6, border: '1px solid #e5e7eb', width: 100 }}
+                  />
+                </label>
               </div>
               <p style={{ margin: '10px 0 0', color: '#6b7280', fontSize: 12 }}>
-                Zeitfenster verwendet die Schedule-Zeitzone; Start ist eingeschlossen, Ende ausgeschlossen. Über Mitternacht laufende Zeitfenster sind möglich.
+                Zeitfenster verwendet die Schedule-Zeitzone; Start ist eingeschlossen, Ende ausgeschlossen. Über Mitternacht laufende Zeitfenster sind möglich. Die Wachzeit wird bei Bedarf auf die Motorlaufzeit angehoben.
               </p>
               <div style={{ marginTop: 14, padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: 6, background: '#fff' }}>
                 <strong style={{ color: '#374151', fontSize: 13 }}>Testlauf-Status: </strong>
@@ -779,9 +829,42 @@ export default function Huehnerklappe() {
                 </span>
                 <div style={{ marginTop: 4, color: '#6b7280', fontSize: 12 }}>
                   {testModeEnabled
-                    ? `Nächste Aktion: ${testModeActionLabel(status?.testModeNextAction)}${status?.testModeNextAt ? ` um ${status.testModeNextAt}` : ' – Intervall wird gestartet'}. Erster Lauf nach einem vollständigen Intervall; der Controller muss online und der Timestamp-Schedule aus sein.`
+                    ? status?.testModeSleepPending
+                      ? `Nächste Aktion: ${testModeActionLabel(status.testModeNextAction)} – nach der Maximalwachzeit schläft der Controller bis zum nächsten Intervall.`
+                      : `Nächste Aktion: ${testModeActionLabel(status?.testModeNextAction)}${status?.testModeNextAt ? ` um ${status.testModeNextAt}` : ' – Intervall wird gestartet'}. Der Controller schläft zwischen den Aktionen; der Timestamp-Schedule muss aus sein.`
                     : 'Zum Starten den Testmodus oben aktivieren.'}
                 </div>
+              </div>
+            </div>
+            <div style={{ marginTop: 16 }}>
+              <h4 style={{ margin: '0 0 10px', color: '#374151' }}>Testmodus-Verlauf (letzte 20 Zyklen)</h4>
+              <div style={{ overflowX: 'auto', border: `1px solid ${selectedTheme.rowBorder}`, borderRadius: 8 }}>
+                <table style={{ width: '100%', minWidth: 940, borderCollapse: 'collapse', fontSize: 12, color: selectedTheme.labelColor }}>
+                  <thead>
+                    <tr style={{ background: selectedTheme.rowBg }}>
+                      {['#', 'Aktion', 'Start', 'Endposition', 'Motorlaufzeit', 'Akku (%)', 'Max. wach (s)', 'Sleep (s)', 'Sleep gesendet', 'Geschlafen um', 'Aufgewacht um'].map((label) => (
+                        <th key={label} style={{ textAlign: 'left', padding: '9px 10px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>{label}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {testModeHistoryRows.map((entry, index) => (
+                      <tr key={entry?.actionAtMs ?? `empty-${index}`}>
+                        <td style={{ padding: '8px 10px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>{entry ? index + 1 : '—'}</td>
+                        <td style={{ padding: '8px 10px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>{entry ? testModeActionLabel(entry.action) : '—'}</td>
+                        <td style={{ padding: '8px 10px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>{formatStatusTimestamp(entry?.actionAtMs)}</td>
+                        <td style={{ padding: '8px 10px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>{formatPositionLabel(entry?.endPosition)}</td>
+                        <td style={{ padding: '8px 10px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>{entry?.motorDurationSec ? `${entry.motorDurationSec.toFixed(1)} s` : '—'}</td>
+                        <td style={{ padding: '8px 10px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>{entry?.batteryPercent ?? '—'}</td>
+                        <td style={{ padding: '8px 10px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>{entry?.maxAwakeSeconds ?? '—'}</td>
+                        <td style={{ padding: '8px 10px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>{entry?.sleepSeconds ?? '—'}</td>
+                        <td style={{ padding: '8px 10px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>{formatStatusTimestamp(entry?.sleepCommandAtMs)}</td>
+                        <td style={{ padding: '8px 10px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>{formatStatusTimestamp(entry?.sleepingAtMs)}</td>
+                        <td style={{ padding: '8px 10px', borderBottom: `1px solid ${selectedTheme.rowBorder}` }}>{formatStatusTimestamp(entry?.wokeUpAtMs)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>

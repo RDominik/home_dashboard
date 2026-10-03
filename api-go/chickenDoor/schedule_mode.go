@@ -438,11 +438,27 @@ func (h *ChickenDoor) updateStateTracking(controllerState, sleepState string, st
 		return
 	}
 	h.lastStateMessageAt = stateTs
+	// A test-mode sleep cycle owns its own history row. Keep its controller
+	// transitions out of the schedule history even after the sleep command has
+	// cleared testModeSleepPending and before the next test action begins.
+	testModeCyclePending := false
+	if n := len(h.testModeHistory); n > 0 {
+		row := h.testModeHistory[n-1]
+		testModeCyclePending = row.SleepCommandAtMs > 0 && row.WokeUpAtMs == 0
+	}
 	if (stateForTransition == "sleeping" || stateForTransition == "offline") && h.lastControllerState != stateForTransition {
 		h.sleepingAt = stateTs
 		changed = true
-		if n := len(h.scheduleHistory); n > 0 && h.scheduleHistory[n-1].SleepingAtMs == 0 {
-			h.scheduleHistory[n-1].SleepingAtMs = unixMillisOrZero(stateTs)
+		if !testModeCyclePending {
+			if n := len(h.scheduleHistory); n > 0 && h.scheduleHistory[n-1].SleepingAtMs == 0 {
+				h.scheduleHistory[n-1].SleepingAtMs = unixMillisOrZero(stateTs)
+			}
+		}
+		if n := len(h.testModeHistory); n > 0 {
+			row := &h.testModeHistory[n-1]
+			if row.SleepCommandAtMs > 0 && row.SleepingAtMs == 0 {
+				row.SleepingAtMs = unixMillisOrZero(stateTs)
+			}
 		}
 	}
 	if stateForTransition == "online" && (h.lastControllerState == "sleeping" || h.lastControllerState == "offline") {
@@ -451,12 +467,20 @@ func (h *ChickenDoor) updateStateTracking(controllerState, sleepState string, st
 		if !h.sleepingAt.IsZero() && !h.onlineAt.Before(h.sleepingAt) {
 			h.wakeDeltaMs = h.onlineAt.Sub(h.sleepingAt).Milliseconds()
 		}
-		if n := len(h.scheduleHistory); n > 0 {
-			if h.scheduleHistory[n-1].SleepingAtMs == 0 {
-				h.scheduleHistory[n-1].SleepingAtMs = unixMillisOrZero(h.sleepingAt)
+		if !testModeCyclePending {
+			if n := len(h.scheduleHistory); n > 0 {
+				if h.scheduleHistory[n-1].SleepingAtMs == 0 {
+					h.scheduleHistory[n-1].SleepingAtMs = unixMillisOrZero(h.sleepingAt)
+				}
+				if h.scheduleHistory[n-1].WokeUpAtMs == 0 {
+					h.scheduleHistory[n-1].WokeUpAtMs = unixMillisOrZero(stateTs)
+				}
 			}
-			if h.scheduleHistory[n-1].WokeUpAtMs == 0 {
-				h.scheduleHistory[n-1].WokeUpAtMs = unixMillisOrZero(stateTs)
+		}
+		if n := len(h.testModeHistory); n > 0 {
+			row := &h.testModeHistory[n-1]
+			if row.SleepingAtMs > 0 && row.WokeUpAtMs == 0 {
+				row.WokeUpAtMs = unixMillisOrZero(stateTs)
 			}
 		}
 		if h.scheduleActive {

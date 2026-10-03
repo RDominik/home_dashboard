@@ -67,6 +67,60 @@ func TestTestModeWindowCrossesMidnight(t *testing.T) {
 	}
 }
 
+// @brief Verifies sleep duration preserves the action interval and never sleeps for zero seconds.
+// @param t Go test context.
+func TestTestModeSleepSecondsUntilDeadline(t *testing.T) {
+	now := time.Date(2026, time.June, 12, 10, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name     string
+		deadline time.Time
+		want     int
+	}{
+		{name: "remaining interval", deadline: now.Add(45*time.Minute + 250*time.Millisecond), want: 2701},
+		{name: "deadline consumed by awake allowance", deadline: now.Add(-time.Second), want: 1},
+		{name: "deadline now", deadline: now, want: 1},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := testModeSleepSecondsUntil(now, test.deadline); got != test.want {
+				t.Fatalf("sleep seconds = %d, want %d", got, test.want)
+			}
+		})
+	}
+}
+
+// @brief Verifies test-mode controller transitions update only test history.
+// @details
+// A successful test sleep command may be acknowledged after the pending flag
+// has already been cleared. This regression test proves the in-flight history
+// row continues to own both sleep and wake acknowledgements and that the last
+// schedule row remains unchanged.
+// @param t Go test context.
+func TestTestModeTransitionsDoNotModifyScheduleHistory(t *testing.T) {
+	sleepCommandAt := time.Date(2026, time.June, 12, 10, 0, 0, 0, time.UTC).UnixMilli()
+	service := &ChickenDoor{
+		lastControllerState: "online",
+		scheduleHistory:     []ScheduleHistoryEntry{{SleepSeconds: 600}},
+		testModeHistory:     []TestModeHistoryEntry{{Action: "open", SleepCommandAtMs: sleepCommandAt}},
+	}
+	sleepingAt := time.UnixMilli(sleepCommandAt + 5000)
+	service.updateStateTracking("sleeping", "sleeping", sleepingAt, true)
+	if service.scheduleHistory[0].SleepingAtMs != 0 {
+		t.Fatalf("test-mode sleeping ACK contaminated schedule history: %#v", service.scheduleHistory[0])
+	}
+	if service.testModeHistory[0].SleepingAtMs != sleepingAt.UnixMilli() {
+		t.Fatalf("test-mode sleeping ACK missing from test history: %#v", service.testModeHistory[0])
+	}
+	wokeAt := sleepingAt.Add(2 * time.Minute)
+	service.updateStateTracking("online", "online", wokeAt, true)
+	if service.scheduleHistory[0].WokeUpAtMs != 0 {
+		t.Fatalf("test-mode wake ACK contaminated schedule history: %#v", service.scheduleHistory[0])
+	}
+	if service.testModeHistory[0].WokeUpAtMs != wokeAt.UnixMilli() {
+		t.Fatalf("test-mode wake ACK missing from test history: %#v", service.testModeHistory[0])
+	}
+}
+
 // @brief Verifies that test-mode configuration sent through ui-state survives a bbolt reload.
 // @details
 // The test exercises the public PUT handler, its shared persistState path, and
@@ -88,7 +142,8 @@ func TestTestModeSettingsPersistThroughUIState(t *testing.T) {
 	}
 
 	service := &ChickenDoor{db: db, testModeIntervalMinutes: 30, testModeStartTime: "08:00", testModeEndTime: "20:00", testModeNextAction: "open"}
-	request := httptest.NewRequest(http.MethodPut, "/api/huehnerklappe/ui-state", strings.NewReader(`{"testModeEnabled":true,"testModeIntervalMinutes":45,"testModeStartTime":"07:15","testModeEndTime":"21:30"}`))
+	service.testModeHistory = []TestModeHistoryEntry{{Action: "open", ActionAtMs: 1781244000000, MaxAwakeSeconds: 45}}
+	request := httptest.NewRequest(http.MethodPut, "/api/huehnerklappe/ui-state", strings.NewReader(`{"testModeEnabled":true,"testModeIntervalMinutes":45,"testModeStartTime":"07:15","testModeEndTime":"21:30","testModeMaxAwakeSeconds":75}`))
 	response := httptest.NewRecorder()
 	service.UIStateHandler(response, request)
 	if response.Code != http.StatusOK {
@@ -107,5 +162,39 @@ func TestTestModeSettingsPersistThroughUIState(t *testing.T) {
 	}
 	if restored.testModeStartTime != "07:15" || restored.testModeEndTime != "21:30" {
 		t.Fatalf("window restored as %s-%s, want 07:15-21:30", restored.testModeStartTime, restored.testModeEndTime)
+	}
+	if restored.testModeMaxAwakeSeconds != 75 {
+		t.Fatalf("max awake time restored as %d seconds, want 75", restored.testModeMaxAwakeSeconds)
+	}
+	if len(restored.testModeHistory) != 1 || restored.testModeHistory[0].Action != "open" {
+		t.Fatalf("test-mode history was not restored: %#v", restored.testModeHistory)
+	}
+}
+
+// @brief Verifies repeated UI-state saves do not reset an enabled test cycle deadline.
+// @details
+// The frontend sends the full shared UI state whenever unrelated controls or
+// tabs change. An unchanged true enable flag must therefore leave an armed
+// wake deadline intact, otherwise the controller could remain asleep while the
+// backend keeps moving the expected action time.
+// @param t Go test context.
+func TestTestModeSettingsSavePreservesArmedDeadline(t *testing.T) {
+	deadline := time.Now().Add(10 * time.Minute)
+	service := &ChickenDoor{
+		testModeEnabled:         true,
+		testModeIntervalMinutes: 10,
+		testModeStartTime:       "08:00",
+		testModeEndTime:         "20:00",
+		testModeNextAction:      "close",
+		testModeNextAt:          deadline,
+	}
+	request := httptest.NewRequest(http.MethodPut, "/api/huehnerklappe/ui-state", strings.NewReader(`{"testModeEnabled":true,"testModeIntervalMinutes":10,"testModeStartTime":"08:00","testModeEndTime":"20:00"}`))
+	response := httptest.NewRecorder()
+	service.UIStateHandler(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("UI-state PUT returned status %d, want %d: %s", response.Code, http.StatusOK, response.Body.String())
+	}
+	if !service.testModeNextAt.Equal(deadline) {
+		t.Fatalf("repeated settings save changed next action deadline from %s to %s", deadline, service.testModeNextAt)
 	}
 }

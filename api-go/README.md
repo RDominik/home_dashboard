@@ -21,8 +21,8 @@ Backend components (folder map)
 	- Huhnerklappe domain logic (manual control, schedule, wake/sleep flow).
 	- Persists UI/schedule state in bbolt (including timestamps, actions, auto-stop, history, and test-mode interval/window/direction).
 	- Provides endpoints used by the Huehnerklappe UI (status, ui-state, schedule updates, commands).
-	- The test mode waits one full interval before its first open action, then alternates open/close after each interval inside the configured daily schedule-timezone window (inclusive start, exclusive end; midnight crossing supported).
-	- It pauses while the timestamp schedule is active, retains one due action while the controller is unavailable, and uses the existing motor auto-stop handling. Its enable flag, interval, window, next direction, and pending deadline are stored in bbolt and exposed by `/api/huehnerklappe/ui-state` and `/api/huehnerklappe/status`.
+	- The test mode waits one full interval before its first open action, then alternates open/close inside the configured daily schedule-timezone window (inclusive start, exclusive end; midnight crossing supported).
+	- After each motor movement completes, it keeps the controller awake up to the separately configured maximum-awake time (default 30 seconds, at least the motor auto-stop duration), then sends `nano/esp32/sleepms` for only the remaining time until the configured action interval. This preserves the requested action-to-action cadence; if the awake time consumes the whole interval, sleep is clamped to one second. Repeated UI-state saves do not reset the armed wake deadline. It pauses while the timestamp schedule is active, retains one due action while the controller is unavailable, and uses existing motor auto-stop handling. Test settings, next direction, deadline, pending sleep, and a separate bbolt-persisted history of the latest 20 cycles are stored server-side.
 
 - `wallbox/`
 	- Wallbox domain logic and REST/MQTT mapping.
