@@ -818,9 +818,31 @@ export default function Huehnerklappe() {
                     style={{ marginLeft: 8, padding: '6px 8px', borderRadius: 6, border: '1px solid #e5e7eb', width: 100 }}
                   />
                 </label>
+                <label style={{ fontSize: 14, color: '#6b7280' }}>
+                  Auto-Stop Öffnen (Sekunden, 1–60):
+                  <input
+                    type="number"
+                    min={1}
+                    max={60}
+                    value={motorAutoStopOpenSeconds}
+                    onChange={e => setMotorAutoStopOpenSeconds(Math.max(1, Math.min(60, Number(e.target.value) || 1)))}
+                    style={{ marginLeft: 8, padding: '6px 8px', borderRadius: 6, border: '1px solid #e5e7eb', width: 80 }}
+                  />
+                </label>
+                <label style={{ fontSize: 14, color: '#6b7280' }}>
+                  Auto-Stop Schließen (Sekunden, 1–60):
+                  <input
+                    type="number"
+                    min={1}
+                    max={60}
+                    value={motorAutoStopCloseSeconds}
+                    onChange={e => setMotorAutoStopCloseSeconds(Math.max(1, Math.min(60, Number(e.target.value) || 1)))}
+                    style={{ marginLeft: 8, padding: '6px 8px', borderRadius: 6, border: '1px solid #e5e7eb', width: 80 }}
+                  />
+                </label>
               </div>
               <p style={{ margin: '10px 0 0', color: '#6b7280', fontSize: 12 }}>
-                Zeitfenster verwendet die Schedule-Zeitzone; Start ist eingeschlossen, Ende ausgeschlossen. Über Mitternacht laufende Zeitfenster sind möglich. Die Wachzeit wird bei Bedarf auf die Motorlaufzeit angehoben.
+                Zeitfenster verwendet die Schedule-Zeitzone; Start ist eingeschlossen, Ende ausgeschlossen. Über Mitternacht laufende Zeitfenster sind möglich. Die Wachzeit wird bei Bedarf auf die Motorlaufzeit angehoben. Die Auto-Stop-Werte werden mit manueller Steuerung und Schedule geteilt.
               </p>
               <div style={{ marginTop: 14, padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: 6, background: '#fff' }}>
                 <strong style={{ color: '#374151', fontSize: 13 }}>Testlauf-Status: </strong>

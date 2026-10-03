@@ -28,6 +28,7 @@ Ziel: Einfache Weboberfläche mit Seitenleiste, um verschiedene Dashboards anzuz
 	- UI-State Synchronisierung mit Backend (`/api/huehnerklappe/ui-state`).
 	- Schedule-Konfiguration inklusive Zeitstempel, Aktionen und Verlauf.
 	- Persistierter Testmodus mit einstellbarem Intervall (1–1440 Minuten), separater Maximalwachzeit (1–86400 Sekunden) und täglichem Zeitfenster in der Schedule-Zeitzone; die erste Aktion ist Öffnen nach Ablauf des ersten Intervalls, danach wechseln Öffnen und Schließen. Nach Ablauf der Wachzeit schläft der Controller nur bis zur nächsten Intervallgrenze, damit die Wachzeit das Aktionsintervall nicht zusätzlich verlängert.
+	- Im Testmodus sind zusätzlich die Auto-Stop-Zeiten für Öffnen und Schließen (je 1–60 Sekunden) direkt einstellbar. Sie verwenden dieselben serverseitig gespeicherten gemeinsamen Werte wie manuelle Steuerung und Schedule und werden vom Backend auch für Testbewegungen erzwungen.
 	- Ein eigener Testmodus-Verlauf zeigt die letzten 20 Zyklen einschließlich Aktion, Startzeit, Position, Motorlaufzeit, Akku-Rohwert, Wachzeit, Sleep-Befehl sowie Schlaf- und Aufwachbestätigung. Einstellungen werden über die UI-State-API serverseitig gespeichert; Verlauf und Runtime-Zustand bleiben in bbolt erhalten.
 	- Das Zeitfenster umfasst den Start, aber nicht das Ende und kann Mitternacht überschreiten. Bei aktivem Timestamp-Schedule pausiert der Testmodus; ein bei nicht verfügbarem Controller fälliger Einzelauftrag wird bis zur Wiederverbindung gehalten.
 
