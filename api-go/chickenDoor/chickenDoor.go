@@ -21,11 +21,13 @@ import (
 const nanoSetPrefix = "nano/esp32"
 const motorRuntimeOpenTopic = nanoSetPrefix + "/runtime/open"
 const motorRuntimeCloseTopic = nanoSetPrefix + "/runtime/close"
+const engineMaxRuntimeTopic = nanoSetPrefix + "/engineMaxRuntime"
 const stateDBPathDefault = "data/chickendoor.db"
 const stateBucketName = "chickendoor"
 const stateKey = "state"
 
 const defaultMotorAutoStopSeconds = 15
+const defaultEngineMaxRuntimeSeconds = 60
 
 // @brief Represents the consolidated ChickenDoor device and test-mode status.
 // @details
@@ -164,9 +166,11 @@ type ChickenDoor struct {
 	sleepTime                 int
 	motorAutoStopOpenSeconds  int
 	motorAutoStopCloseSeconds int
-	sleepUntil                string
-	controlMode               string
-	historyExpanded           bool
+	// engineMaxRuntimeSeconds is the persisted controller-wide runtime ceiling.
+	engineMaxRuntimeSeconds int
+	sleepUntil              string
+	controlMode             string
+	historyExpanded         bool
 	// Test-mode settings persist the explicit enable flag and minute interval
 	// independently from the timestamp schedule; schedule activity pauses tests.
 	testModeEnabled bool
@@ -252,19 +256,21 @@ type persistedState struct {
 	MotorAutoStopSeconds      int                    `json:"motorAutoStopSeconds,omitempty"`
 	MotorAutoStopOpenSeconds  int                    `json:"motorAutoStopOpenSeconds"`
 	MotorAutoStopCloseSeconds int                    `json:"motorAutoStopCloseSeconds"`
-	SleepUntil                string                 `json:"sleepUntil"`
-	ControlMode               string                 `json:"controlMode"`
-	HistoryExpanded           bool                   `json:"historyExpanded"`
-	LastStatusPosition        string                 `json:"lastStatusPosition"`
-	LastStatusAction          string                 `json:"lastStatusAction"`
-	LastStatusBattery         string                 `json:"lastStatusBattery"`
-	LastStatusWakeReason      string                 `json:"lastStatusWakeReason"`
-	LastStatusController      string                 `json:"lastStatusController"`
-	LastStatusSleep           string                 `json:"lastStatusSleep"`
-	LastStatusIP              string                 `json:"lastStatusIP"`
-	LastStatusCharging        string                 `json:"lastStatusCharging"`
-	LastStatusLimitClose      string                 `json:"lastStatusLimitClose,omitempty"`
-	LastStatusLimitOpen       string                 `json:"lastStatusLimitOpen,omitempty"`
+	// EngineMaxRuntimeSeconds stores the shared motor runtime ceiling in seconds.
+	EngineMaxRuntimeSeconds int    `json:"engineMaxRuntimeSeconds"`
+	SleepUntil              string `json:"sleepUntil"`
+	ControlMode             string `json:"controlMode"`
+	HistoryExpanded         bool   `json:"historyExpanded"`
+	LastStatusPosition      string `json:"lastStatusPosition"`
+	LastStatusAction        string `json:"lastStatusAction"`
+	LastStatusBattery       string `json:"lastStatusBattery"`
+	LastStatusWakeReason    string `json:"lastStatusWakeReason"`
+	LastStatusController    string `json:"lastStatusController"`
+	LastStatusSleep         string `json:"lastStatusSleep"`
+	LastStatusIP            string `json:"lastStatusIP"`
+	LastStatusCharging      string `json:"lastStatusCharging"`
+	LastStatusLimitClose    string `json:"lastStatusLimitClose,omitempty"`
+	LastStatusLimitOpen     string `json:"lastStatusLimitOpen,omitempty"`
 }
 
 type uiStateRequest struct {
@@ -303,17 +309,39 @@ func clampMotorAutoStopSeconds(seconds int) int {
 	return seconds
 }
 
+// @brief Applies a shared controller-wide maximum to a directional motor runtime.
+// @details
+// Directional auto-stop values remain independent, but neither the MQTT
+// runtime configuration nor backend timeout enforcement may exceed the
+// persisted global safety ceiling. A zero maximum means that an older
+// in-memory/test instance has no global setting initialized, so the directional
+// value is preserved.
+// @param seconds Direction-specific timeout in seconds.
+// @param maximumSeconds Shared runtime ceiling in seconds, or zero when unset.
+// @return Directional timeout constrained to 1..60 and no greater than the ceiling.
+func capMotorRuntimeSeconds(seconds, maximumSeconds int) int {
+	seconds = clampMotorAutoStopSeconds(seconds)
+	if maximumSeconds > 0 {
+		seconds = min(seconds, clampMotorAutoStopSeconds(maximumSeconds))
+	}
+	return seconds
+}
+
 // @brief Publishes the configured directional motor runtime to the controller.
 // @details
 // The controller receives separate runtimes because opening and closing can
-// require different movement durations. The backend continues enforcing the
-// same directional timeout locally, while this MQTT value lets the controller
-// apply the matching stop limit for the next movement command.
+// require different movement durations. The requested directional duration is
+// capped by the shared engineMaxRuntimeSeconds setting before it is published;
+// autoStopTick applies the same cap locally so broker and backend safety limits
+// cannot disagree.
 // @param action Motor direction, expected to be "open" or "close".
 // @param seconds Requested directional motor runtime in seconds.
 // @return An error when the MQTT publish cannot be completed.
 func (h *ChickenDoor) publishMotorRuntime(action string, seconds int) error {
-	seconds = clampMotorAutoStopSeconds(seconds)
+	h.mu.Lock()
+	maxRuntimeSeconds := h.engineMaxRuntimeSeconds
+	h.mu.Unlock()
+	seconds = capMotorRuntimeSeconds(seconds, maxRuntimeSeconds)
 	topic := motorRuntimeOpenTopic
 	if action == "close" {
 		topic = motorRuntimeCloseTopic
@@ -449,6 +477,13 @@ func (h *ChickenDoor) loadPersistedState() {
 	} else {
 		h.motorAutoStopCloseSeconds = defaultMotorAutoStopSeconds
 	}
+	if state.EngineMaxRuntimeSeconds >= 1 && state.EngineMaxRuntimeSeconds <= 60 {
+		h.engineMaxRuntimeSeconds = state.EngineMaxRuntimeSeconds
+	} else {
+		// The default ceiling is the existing supported maximum, so older
+		// databases retain their previous directional auto-stop behavior.
+		h.engineMaxRuntimeSeconds = defaultEngineMaxRuntimeSeconds
+	}
 	h.sleepUntil = state.SleepUntil
 	h.controlMode = state.ControlMode
 	h.historyExpanded = state.HistoryExpanded
@@ -480,7 +515,12 @@ func (h *ChickenDoor) loadPersistedState() {
 	log.Printf("[chickendoor-state] restored schedule: active=%t timestamps=%d history=%d", h.scheduleActive, len(h.scheduleTimestamps), len(h.scheduleHistory))
 }
 
-// @brief Persists current schedule state/history to local DB.
+// @brief Persists current ChickenDoor settings, runtime and histories to bbolt.
+// @details The snapshot includes UI settings, test-mode and schedule state,
+// direction-specific auto-stop values, the shared maximum motor runtime, and
+// status fallbacks. A single serialized snapshot keeps these related settings
+// consistent across backend restarts.
+// @return No value; persistence failures are logged and leave the current process running.
 func (h *ChickenDoor) persistState() {
 	if h.db == nil {
 		return
@@ -513,6 +553,7 @@ func (h *ChickenDoor) persistState() {
 		SleepTime:                 h.sleepTime,
 		MotorAutoStopOpenSeconds:  h.motorAutoStopOpenSeconds,
 		MotorAutoStopCloseSeconds: h.motorAutoStopCloseSeconds,
+		EngineMaxRuntimeSeconds:   h.engineMaxRuntimeSeconds,
 		SleepUntil:                h.sleepUntil,
 		ControlMode:               h.controlMode,
 		HistoryExpanded:           h.historyExpanded,
@@ -556,6 +597,7 @@ func New(mqttManager *mqtt.Manager) *ChickenDoor {
 		done:                      make(chan struct{}),
 		motorAutoStopOpenSeconds:  defaultMotorAutoStopSeconds,
 		motorAutoStopCloseSeconds: defaultMotorAutoStopSeconds,
+		engineMaxRuntimeSeconds:   defaultEngineMaxRuntimeSeconds,
 		testModeIntervalMinutes:   30,
 		testModeStartTime:         "08:00",
 		testModeEndTime:           "20:00",
@@ -622,10 +664,10 @@ func resolveDoorPosition(limitClose, limitOpen, engineStatus, lastAction string)
 
 // @brief Enforces automatic motor stop after the configured timeout and tracks run duration.
 //
-// When engine_status still indicates movement after motorAutoStopSeconds, this
-// method publishes "stop" to the engine topic, calculates the total run duration,
-// updates the latest schedule history entry with end position derived from limit switches
-// and runtime, and clears the running timer.
+// When engine_status still indicates movement after the lower of the
+// direction-specific auto-stop value and the shared maximum runtime, this
+// method publishes "stop" to the engine topic, calculates the total run
+// duration, updates applicable history, and clears the running timer.
 func (h *ChickenDoor) autoStopTick() {
 	msgs := h.mqttManager.Messages()
 	position := toString(msgs["engine_status"])
@@ -655,6 +697,7 @@ func (h *ChickenDoor) autoStopTick() {
 	} else {
 		h.motorAutoStopOpenSeconds = timeoutSeconds
 	}
+	timeoutSeconds = capMotorRuntimeSeconds(timeoutSeconds, h.engineMaxRuntimeSeconds)
 
 	now := time.Now()
 	// Case 1: Motor is not recorded as running yet.
@@ -913,6 +956,8 @@ func jsonError(w http.ResponseWriter, code int, msg string) {
 // Supported paths:
 // - /api/huehnerklappe/status
 // - /api/huehnerklappe/set
+//   - key "engineMaxRuntime" publishes and persists the controller-wide runtime ceiling.
+//
 // - /api/huehnerklappe/sleep-schedule
 // - /api/huehnerklappe/ (backward-compatible alias for sleep-schedule)
 // @param w HTTP response writer.
@@ -1110,6 +1155,7 @@ func (h *ChickenDoor) UIStateHandler(w http.ResponseWriter, r *http.Request) {
 			"sleepTime":                 h.sleepTime,
 			"motorAutoStopOpenSeconds":  h.motorAutoStopOpenSeconds,
 			"motorAutoStopCloseSeconds": h.motorAutoStopCloseSeconds,
+			"engineMaxRuntimeSeconds":   h.engineMaxRuntimeSeconds,
 			"sleepUntil":                h.sleepUntil,
 			"controlMode":               h.controlMode,
 			"historyExpanded":           h.historyExpanded,

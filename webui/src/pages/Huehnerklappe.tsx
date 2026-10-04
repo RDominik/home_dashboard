@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react'
 import { useEffect, useRef, useState } from 'react'
-import PageHeader from '../components/PageHeader'
+import PageHeader, { pageHeaderButtonStyle } from '../components/PageHeader'
 
 const API = '/api/huehnerklappe'
 
@@ -81,6 +81,7 @@ type UiStateResponse = {
   motorAutoStopSeconds?: number
   motorAutoStopOpenSeconds?: number
   motorAutoStopCloseSeconds?: number
+  engineMaxRuntimeSeconds?: number
   sleepUntil?: string
   controlMode?: ControlMode
   scheduleActive?: boolean
@@ -99,6 +100,7 @@ type SetCommandResponse = {
   ok?: boolean
   error?: string
   stored?: boolean
+  topic?: string
 }
 
 type PickerDraft = {
@@ -137,6 +139,10 @@ export default function Huehnerklappe() {
   const [sleepTime, setSleepTime] = useState(60) // default 60 Sekunden
   const [motorAutoStopOpenSeconds, setMotorAutoStopOpenSeconds] = useState(15)
   const [motorAutoStopCloseSeconds, setMotorAutoStopCloseSeconds] = useState(15)
+  const [engineMaxRuntimeSeconds, setEngineMaxRuntimeSeconds] = useState(60)
+  const [engineMaxRuntimeDraft, setEngineMaxRuntimeDraft] = useState(60)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [savingEngineMaxRuntime, setSavingEngineMaxRuntime] = useState(false)
   const [sleepUntil, setSleepUntil] = useState('')
   const [controlMode, setControlMode] = useState<ControlMode>('manual')
   const [controlTab, setControlTab] = useState<ControlTab>('manual')
@@ -205,6 +211,9 @@ export default function Huehnerklappe() {
         setMotorAutoStopCloseSeconds(Math.max(1, Math.min(60, Number(data.motorAutoStopCloseSeconds))))
       } else if (legacyMotorRuntime !== null) {
         setMotorAutoStopCloseSeconds(legacyMotorRuntime)
+      }
+      if (Number.isFinite(data.engineMaxRuntimeSeconds) && Number(data.engineMaxRuntimeSeconds) >= 1) {
+        setEngineMaxRuntimeSeconds(Math.min(60, Number(data.engineMaxRuntimeSeconds)))
       }
       if (typeof data.sleepUntil === 'string') {
         setSleepUntil(data.sleepUntil)
@@ -346,6 +355,37 @@ export default function Huehnerklappe() {
       setFeedback({ type: 'error', msg: `❌ Fehler: ${message}` })
     } finally {
       setSending(false)
+    }
+  }
+
+  /**
+   * @brief Publishes and stores the shared maximum motor runtime.
+   * @details The API validates the 1–60 second value, publishes it to the
+   * dedicated controller configuration topic, and persists it in bbolt only
+   * after the MQTT broker accepts the publication.
+   * @param seconds Draft maximum runtime in whole seconds.
+   * @return Resolves after showing success or failure feedback to the user.
+   */
+  const saveEngineMaxRuntime = async (seconds: number) => {
+    setSavingEngineMaxRuntime(true)
+    setFeedback(null)
+    try {
+      const response = await fetch(`${API}/set`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'engineMaxRuntime', value: seconds }),
+      })
+      const result: SetCommandResponse = await response.json()
+      if (!response.ok || !result.ok) {
+        throw new Error(result.error ?? 'Maximale Motorlaufzeit konnte nicht gespeichert werden.')
+      }
+      setEngineMaxRuntimeSeconds(seconds)
+      setSettingsOpen(false)
+      setFeedback({ type: 'success', msg: `✅ Maximale Motorlaufzeit ${seconds} s gespeichert und an ${result.topic ?? 'MQTT'} gesendet.` })
+    } catch (error) {
+      setFeedback({ type: 'error', msg: `❌ ${error instanceof Error ? error.message : String(error)}` })
+    } finally {
+      setSavingEngineMaxRuntime(false)
     }
   }
 
@@ -671,7 +711,22 @@ export default function Huehnerklappe() {
 
   return (
     <div style={{ width: '100%', maxWidth: 1200, minWidth: 0, margin: '0 auto', boxSizing: 'border-box' }}>
-      <PageHeader eyebrow="MQTT / HÜHNERKLAPPE" title="Motor" subtitle="Hühnerklappe und Steuerung" />
+      <PageHeader
+        eyebrow="MQTT / HÜHNERKLAPPE"
+        title="Motor"
+        subtitle="Hühnerklappe und Steuerung"
+        actions={<button
+          type="button"
+          onClick={() => {
+            setEngineMaxRuntimeDraft(engineMaxRuntimeSeconds)
+            setFeedback(null)
+            setSettingsOpen(true)
+          }}
+          style={pageHeaderButtonStyle('transparent', '#fff')}
+        >
+          ⚙ Einstellungen
+        </button>}
+      />
 
       {/* Feedback */}
       {feedback && (
@@ -1252,6 +1307,64 @@ export default function Huehnerklappe() {
         )}
         </div>
         )}
+      </div>
+      {settingsOpen && (
+        <EngineRuntimeSettingsModal
+          value={engineMaxRuntimeDraft}
+          saving={savingEngineMaxRuntime}
+          errorMessage={feedback?.type === 'error' ? feedback.msg : ''}
+          onChange={setEngineMaxRuntimeDraft}
+          onClose={() => setSettingsOpen(false)}
+          onSave={() => saveEngineMaxRuntime(engineMaxRuntimeDraft)}
+        />
+      )}
+    </div>
+  )
+}
+
+type EngineRuntimeSettingsModalProps = {
+  /** @brief Current unsaved runtime draft, in seconds. */
+  value: number
+  /** @brief Indicates that the server is validating and publishing the setting. */
+  saving: boolean
+  /** @brief Error message from the most recent failed save, if any. */
+  errorMessage: string
+  /** @brief Updates the local, unsaved runtime draft. */
+  onChange: (value: number) => void
+  /** @brief Closes the dialog without changing the persisted setting. */
+  onClose: () => void
+  /** @brief Persists and publishes the currently selected runtime. */
+  onSave: () => void
+}
+
+/**
+ * @brief Renders the ChickenDoor controller maximum-runtime settings dialog.
+ * @details The single value is a controller-wide safety ceiling, while the
+ * existing opening/closing auto-stop values remain separate directional
+ * limits. The backend applies the lower of both limits and publishes this
+ * setting under nano/esp32/engineMaxRuntime after confirmation.
+ * @param props Dialog value, save state, and interaction callbacks.
+ * @return Accessible modal dialog containing the maximum runtime control.
+ */
+function EngineRuntimeSettingsModal({ value, saving, errorMessage, onChange, onClose, onSave }: EngineRuntimeSettingsModalProps) {
+  return (
+    <div role="dialog" aria-modal="true" aria-labelledby="chicken-door-settings-title" style={{ position: 'fixed', inset: 0, zIndex: 30, background: 'rgba(19, 39, 43, 0.48)', display: 'grid', placeItems: 'center', padding: 20 }}>
+      <div style={{ width: 'min(100%, 480px)', background: '#fff', borderRadius: 12, padding: 24, boxShadow: '0 20px 60px rgba(0,0,0,0.22)', color: '#273746', fontFamily: 'Arial, sans-serif' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <h2 id="chicken-door-settings-title" style={{ margin: 0, color: '#263d52', fontFamily: 'Georgia, "Times New Roman", serif' }}>Hühnerklappen-Einstellungen</h2>
+          <button type="button" onClick={onClose} aria-label="Einstellungen schließen" disabled={saving} style={{ border: 0, background: 'transparent', fontSize: 24, cursor: 'pointer', color: '#64748b' }}>×</button>
+        </div>
+        <p style={{ color: '#64748b', fontSize: 13, lineHeight: 1.5 }}>Die Einstellung wird serverseitig gespeichert und auf dem MQTT-Topic <strong>nano/esp32/engineMaxRuntime</strong> in Sekunden an den Controller gesendet.</p>
+        {errorMessage && <div role="alert" style={{ marginTop: 14, padding: '10px 12px', borderRadius: 6, background: '#fee2e2', color: '#991b1b', fontSize: 13 }}>{errorMessage}</div>}
+        <label style={{ display: 'grid', gap: 7, marginTop: 18, color: '#365065', fontSize: 13, fontWeight: 700 }}>
+          Maximale Motorlaufzeit (Sekunden, 1–60)
+          <input type="number" min={1} max={60} step={1} value={value} disabled={saving} onChange={event => onChange(Math.max(1, Math.min(60, Number(event.target.value) || 1)))} style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #cbd5df', borderRadius: 6, padding: '10px 11px', fontSize: 15, color: '#20343a', background: '#fbfdff' }} />
+          <span style={{ color: '#718392', fontSize: 12, fontWeight: 400 }}>Wirkt als gemeinsame Obergrenze zusätzlich zu den getrennten Auto-Stop-Zeiten für Öffnen und Schließen.</span>
+        </label>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 22 }}>
+          <button type="button" onClick={onClose} disabled={saving} style={{ ...pageHeaderButtonStyle('#f3f7f7', '#31565c'), borderColor: '#cbd5df' }}>Abbrechen</button>
+          <button type="button" onClick={onSave} disabled={saving} style={{ ...pageHeaderButtonStyle('#263d52', '#fff'), borderColor: '#263d52', opacity: saving ? 0.65 : 1 }}>{saving ? 'Speichert …' : 'Speichern & senden'}</button>
+        </div>
       </div>
     </div>
   )

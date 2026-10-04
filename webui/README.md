@@ -25,6 +25,7 @@ Ziel: Einfache Weboberfläche mit Seitenleiste, um verschiedene Dashboards anzuz
 
 - `Huehnerklappe.tsx`
 	- Klappenansicht mit gleichrangigen Tabs für manuelle Steuerung, Sleep-Schedule und Testmodus.
+	- Der Header-Einstellungsbutton öffnet einen Dialog für die gemeinsame maximale Motorlaufzeit (1–60 Sekunden); Speichern sendet den Sekundenwert an `nano/esp32/engineMaxRuntime` und speichert ihn serverseitig in bbolt. Der Wert begrenzt zusätzlich die Öffnen-/Schließen-Auto-Stop-Zeiten.
 	- UI-State Synchronisierung mit Backend (`/api/huehnerklappe/ui-state`).
 	- Schedule-Konfiguration inklusive Zeitstempel, Aktionen und Verlauf.
 	- Persistierter Testmodus mit einstellbarem Intervall (1–1440 Minuten), separater Maximalwachzeit (1–86400 Sekunden) und täglichem Zeitfenster in der Schedule-Zeitzone; die erste Aktion ist Öffnen nach Ablauf des ersten Intervalls, danach wechseln Öffnen und Schließen. Nach Ablauf der Wachzeit schläft der Controller nur bis zur nächsten Intervallgrenze, damit die Wachzeit das Aktionsintervall nicht zusätzlich verlängert.

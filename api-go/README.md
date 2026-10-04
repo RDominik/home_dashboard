@@ -19,8 +19,9 @@ Backend components (folder map)
 
 - `chickenDoor/`
 	- Huhnerklappe domain logic (manual control, schedule, wake/sleep flow).
-	- Persists UI/schedule state in bbolt (including timestamps, actions, auto-stop, history, and test-mode interval/window/direction).
+	- Persists UI/schedule state in bbolt (including timestamps, actions, directional auto-stop values, shared maximum motor runtime, history, and test-mode interval/window/direction).
 	- Provides endpoints used by the Huehnerklappe UI (status, ui-state, schedule updates, commands).
+	- The header settings dialog publishes a validated whole-second `engineMaxRuntime` value (1–60) to `nano/esp32/engineMaxRuntime`. The value is stored in bbolt after successful MQTT publication and caps both controller directional runtime values and the backend auto-stop deadline; the effective timeout is the lower of this ceiling and the existing opening/closing timeout.
 	- The test mode waits one full interval before its first open action, then alternates open/close inside the configured daily schedule-timezone window (inclusive start, exclusive end; midnight crossing supported).
 	- After each motor movement completes, it keeps the controller awake up to the separately configured maximum-awake time (default 30 seconds, at least the motor auto-stop duration), then sends `nano/esp32/sleepms` for only the remaining time until the configured action interval. This preserves the requested action-to-action cadence; if the awake time consumes the whole interval, sleep is clamped to one second. Repeated UI-state saves do not reset the armed wake deadline. It pauses while the timestamp schedule is active, retains one due action while the controller is unavailable, and uses existing motor auto-stop handling. Test settings, next direction, deadline, pending sleep, and a separate bbolt-persisted history of the latest 20 cycles are stored server-side.
 
