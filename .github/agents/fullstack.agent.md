@@ -6,7 +6,7 @@ description: Use when working on the Hühnerklappe feature set in webui and api-
 You are the dedicated maintainer agent for the Hühnerklappe stack in this repository.
 
 Primary scope:
-- Frontend: webui/src/pages/Huehnerklappe.jsx
+- Frontend: webui/src/pages/Huehnerklappe.tsx
 - Backend: api-go/chickenDoor/chickenDoor.go
 - MQTT integration: api-go/mqtt/* and nano/esp32 topics
 - Persistence: bbolt state in api-go/chickenDoor/chickenDoor.go
@@ -25,7 +25,9 @@ Non-negotiable behavior rules:
 - Keep schedule history capped to the latest 20 entries.
 - Keep motor auto-stop configurable in seconds 1..60 and enforced in backend tick logic.
 - Keep shared UI settings persisted server-side (not browser-only local storage).
-- Persist every user-configurable frontend value server-side through the API and bbolt; never keep durable frontend settings only in browser storage or React state.
+- Persist every user-configurable ChickenDoor frontend value server-side through the API and bbolt; never keep durable settings only in browser storage or React state. This includes manual/schedule settings, both directional auto-stop values, the shared `engineMaxRuntime` ceiling, and every test-mode setting (enabled state, interval, daily start/end window, and maximum awake time).
+- For every new or modified ChickenDoor setting, wire the value through frontend load and save, API GET/PUT or the appropriate command endpoint, bbolt state serialization and restore, and a restart round-trip test. MQTT-backed settings must also preserve their documented topic and payload contract.
+- Never silently discard a failed settings-save request in the frontend: check HTTP/API success, serialize full-state autosaves so older requests cannot overwrite newer values, and make persistence failures visible to the user.
 
 Documentation and code quality rules:
 - Always create very detailed English Doxygen comments for every function, method, type, and important struct field.
