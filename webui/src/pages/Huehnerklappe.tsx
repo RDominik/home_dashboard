@@ -166,6 +166,9 @@ export default function Huehnerklappe() {
   const [charging, setCharging] = useState<string | null>(null)
   const [clockOffsetMs, setClockOffsetMs] = useState(0)
   const [uiLoaded, setUiLoaded] = useState(false)
+  const [settingsSaveError, setSettingsSaveError] = useState('')
+  const uiStateSaveQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const uiStateSaveRevisionRef = useRef(0)
 
   // Status laden
   const loadStatus = async () => {
@@ -306,6 +309,7 @@ export default function Huehnerklappe() {
       sleepTime,
       motorAutoStopOpenSeconds,
       motorAutoStopCloseSeconds,
+      engineMaxRuntimeSeconds,
       sleepUntil,
       controlMode,
       scheduleActive,
@@ -323,16 +327,35 @@ export default function Huehnerklappe() {
       testModeMaxAwakeSeconds,
     }
 
-    const timer = setTimeout(() => {
-      fetch(`${API}/ui-state`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      }).catch(() => {})
+    const revision = ++uiStateSaveRevisionRef.current
+    const timer = window.setTimeout(() => {
+      // Serialize autosaves so a slower old request cannot overwrite a newer
+      // setting snapshot in the durable backend state.
+      uiStateSaveQueueRef.current = uiStateSaveQueueRef.current.then(async () => {
+        try {
+          const response = await fetch(`${API}/ui-state`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+          const result: { ok?: boolean; error?: string } = await response.json()
+          if (!response.ok || result.ok !== true) {
+            throw new Error(result.error ?? `HTTP ${response.status}`)
+          }
+          if (revision === uiStateSaveRevisionRef.current) {
+            setSettingsSaveError('')
+          }
+        } catch (error) {
+          if (revision === uiStateSaveRevisionRef.current) {
+            const message = error instanceof Error ? error.message : String(error)
+            setSettingsSaveError(`Einstellungen konnten nicht dauerhaft gespeichert werden: ${message}`)
+          }
+        }
+      })
     }, 250)
 
-    return () => clearTimeout(timer)
-  }, [uiLoaded, sleepTime, motorAutoStopOpenSeconds, motorAutoStopCloseSeconds, sleepUntil, controlMode, scheduleActive, scheduleTimestamps, scheduleActions, awakeSeconds, historyExpanded, testModeEnabled, testModeIntervalMinutes, testModeStartTime, testModeEndTime, testModeMaxAwakeSeconds])
+    return () => window.clearTimeout(timer)
+  }, [uiLoaded, sleepTime, motorAutoStopOpenSeconds, motorAutoStopCloseSeconds, engineMaxRuntimeSeconds, sleepUntil, controlMode, scheduleActive, scheduleTimestamps, scheduleActions, awakeSeconds, historyExpanded, testModeEnabled, testModeIntervalMinutes, testModeStartTime, testModeEndTime, testModeMaxAwakeSeconds])
 
   const sendCommand = async (key: string, value: string | number | null = null, successMessage: string | null = null) => {
     setSending(true)
@@ -370,15 +393,24 @@ export default function Huehnerklappe() {
     setSavingEngineMaxRuntime(true)
     setFeedback(null)
     try {
-      const response = await fetch(`${API}/set`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: 'engineMaxRuntime', value: seconds }),
+      // Run the explicit MQTT-backed save in the same queue as complete UI
+      // snapshots. This prevents an older autosave from persisting a stale
+      // engineMaxRuntime value after the dedicated endpoint has accepted the
+      // user's new maximum.
+      const saveRequest = uiStateSaveQueueRef.current.then(async () => {
+        const response = await fetch(`${API}/set`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: 'engineMaxRuntime', value: seconds }),
+        })
+        const result: SetCommandResponse = await response.json()
+        if (!response.ok || !result.ok) {
+          throw new Error(result.error ?? 'Maximale Motorlaufzeit konnte nicht gespeichert werden.')
+        }
+        return result
       })
-      const result: SetCommandResponse = await response.json()
-      if (!response.ok || !result.ok) {
-        throw new Error(result.error ?? 'Maximale Motorlaufzeit konnte nicht gespeichert werden.')
-      }
+      uiStateSaveQueueRef.current = saveRequest.then(() => undefined, () => undefined)
+      const result = await saveRequest
       setEngineMaxRuntimeSeconds(seconds)
       setSettingsOpen(false)
       setFeedback({ type: 'success', msg: `✅ Maximale Motorlaufzeit ${seconds} s gespeichert und an ${result.topic ?? 'MQTT'} gesendet.` })
@@ -739,6 +771,11 @@ export default function Huehnerklappe() {
           fontWeight: 500,
         }}>
           {feedback.msg}
+        </div>
+      )}
+      {settingsSaveError && (
+        <div role="alert" style={{ padding: '10px 16px', borderRadius: 8, marginBottom: 16, background: '#fee2e2', color: '#991b1b', fontWeight: 500 }}>
+          ❌ {settingsSaveError}
         </div>
       )}
 

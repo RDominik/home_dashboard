@@ -274,16 +274,18 @@ type persistedState struct {
 }
 
 type uiStateRequest struct {
-	SleepTime                 int             `json:"sleepTime"`
-	MotorAutoStopSeconds      int             `json:"motorAutoStopSeconds,omitempty"`
-	MotorAutoStopOpenSeconds  int             `json:"motorAutoStopOpenSeconds"`
-	MotorAutoStopCloseSeconds int             `json:"motorAutoStopCloseSeconds"`
-	SleepUntil                string          `json:"sleepUntil"`
-	ControlMode               string          `json:"controlMode"`
-	HistoryExpanded           bool            `json:"historyExpanded"`
-	ScheduleTimestamps        []string        `json:"scheduleTimestamps"`
-	ScheduleEntries           []ScheduleEntry `json:"scheduleEntries"`
-	AwakeSeconds              int             `json:"awakeSeconds"`
+	SleepTime                 int `json:"sleepTime"`
+	MotorAutoStopSeconds      int `json:"motorAutoStopSeconds,omitempty"`
+	MotorAutoStopOpenSeconds  int `json:"motorAutoStopOpenSeconds"`
+	MotorAutoStopCloseSeconds int `json:"motorAutoStopCloseSeconds"`
+	// EngineMaxRuntimeSeconds is the shared maximum movement time in seconds.
+	EngineMaxRuntimeSeconds *int            `json:"engineMaxRuntimeSeconds,omitempty"`
+	SleepUntil              string          `json:"sleepUntil"`
+	ControlMode             string          `json:"controlMode"`
+	HistoryExpanded         bool            `json:"historyExpanded"`
+	ScheduleTimestamps      []string        `json:"scheduleTimestamps"`
+	ScheduleEntries         []ScheduleEntry `json:"scheduleEntries"`
+	AwakeSeconds            int             `json:"awakeSeconds"`
 	// TestModeEnabled distinguishes an omitted setting from an explicit disable.
 	TestModeEnabled *bool `json:"testModeEnabled,omitempty"`
 	// TestModeIntervalMinutes is the configured test-action interval in minutes.
@@ -1196,6 +1198,10 @@ func (h *ChickenDoor) UIStateHandler(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, http.StatusBadRequest, "testModeMaxAwakeSeconds muss zwischen 1 und 86400 liegen")
 			return
 		}
+		if req.EngineMaxRuntimeSeconds != nil && (*req.EngineMaxRuntimeSeconds < 1 || *req.EngineMaxRuntimeSeconds > 60) {
+			jsonError(w, http.StatusBadRequest, "engineMaxRuntimeSeconds muss zwischen 1 und 60 liegen")
+			return
+		}
 
 		h.mu.Lock()
 		if req.TestModeIntervalMinutes > 0 {
@@ -1228,6 +1234,9 @@ func (h *ChickenDoor) UIStateHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.MotorAutoStopCloseSeconds > 0 {
 			h.motorAutoStopCloseSeconds = clampMotorAutoStopSeconds(req.MotorAutoStopCloseSeconds)
+		}
+		if req.EngineMaxRuntimeSeconds != nil {
+			h.engineMaxRuntimeSeconds = *req.EngineMaxRuntimeSeconds
 		}
 		// Accept the old field for clients that have not migrated yet. It updates
 		// both directions, preserving the previous single-value behavior.

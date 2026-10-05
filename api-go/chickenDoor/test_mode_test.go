@@ -121,14 +121,14 @@ func TestTestModeTransitionsDoNotModifyScheduleHistory(t *testing.T) {
 	}
 }
 
-// @brief Verifies that test-mode configuration sent through ui-state survives a bbolt reload.
+// @brief Verifies every shared ChickenDoor UI setting survives a bbolt reload.
 // @details
 // The test exercises the public PUT handler, its shared persistState path, and
-// loadPersistedState on a fresh ChickenDoor instance. It ensures both the
-// enable flag and all user-editable interval/window values are stored together
-// instead of only remaining in the original process memory.
+// loadPersistedState on a fresh ChickenDoor instance. It covers manual sleep,
+// schedule action/time/awake configuration, directional auto-stop settings,
+// the shared motor ceiling, UI preferences, and all editable test-mode values.
 // @param t Go test context used for temporary database storage and assertions.
-func TestTestModeSettingsPersistThroughUIState(t *testing.T) {
+func TestAllChickenDoorSettingsPersistThroughUIState(t *testing.T) {
 	db, err := bbolt.Open(t.TempDir()+"/chickendoor.db", 0o600, nil)
 	if err != nil {
 		t.Fatalf("open test database: %v", err)
@@ -143,7 +143,7 @@ func TestTestModeSettingsPersistThroughUIState(t *testing.T) {
 
 	service := &ChickenDoor{db: db, testModeIntervalMinutes: 30, testModeStartTime: "08:00", testModeEndTime: "20:00", testModeNextAction: "open"}
 	service.testModeHistory = []TestModeHistoryEntry{{Action: "open", ActionAtMs: 1781244000000, MaxAwakeSeconds: 45}}
-	request := httptest.NewRequest(http.MethodPut, "/api/huehnerklappe/ui-state", strings.NewReader(`{"testModeEnabled":true,"testModeIntervalMinutes":45,"testModeStartTime":"07:15","testModeEndTime":"21:30","testModeMaxAwakeSeconds":75}`))
+	request := httptest.NewRequest(http.MethodPut, "/api/huehnerklappe/ui-state", strings.NewReader(`{"sleepTime":95,"sleepUntil":"06:45","controlMode":"schedule","historyExpanded":true,"scheduleTimestamps":["06:30:00"],"scheduleEntries":[{"timestamp":"06:30:00","action":"open"}],"awakeSeconds":45,"motorAutoStopOpenSeconds":27,"motorAutoStopCloseSeconds":18,"engineMaxRuntimeSeconds":40,"testModeEnabled":true,"testModeIntervalMinutes":45,"testModeStartTime":"07:15","testModeEndTime":"21:30","testModeMaxAwakeSeconds":75}`))
 	response := httptest.NewRecorder()
 	service.UIStateHandler(response, request)
 	if response.Code != http.StatusOK {
@@ -168,6 +168,15 @@ func TestTestModeSettingsPersistThroughUIState(t *testing.T) {
 	}
 	if len(restored.testModeHistory) != 1 || restored.testModeHistory[0].Action != "open" {
 		t.Fatalf("test-mode history was not restored: %#v", restored.testModeHistory)
+	}
+	if restored.sleepTime != 95 || restored.sleepUntil != "06:45" || restored.controlMode != "schedule" || !restored.historyExpanded {
+		t.Fatalf("manual/shared UI settings not restored: sleepTime=%d sleepUntil=%q controlMode=%q historyExpanded=%t", restored.sleepTime, restored.sleepUntil, restored.controlMode, restored.historyExpanded)
+	}
+	if restored.scheduleAwakeSeconds != 45 || len(restored.scheduleEntries) != 1 || restored.scheduleEntries[0] != (ScheduleEntry{Timestamp: "06:30:00", Action: "open"}) {
+		t.Fatalf("schedule settings not restored: awake=%d entries=%#v", restored.scheduleAwakeSeconds, restored.scheduleEntries)
+	}
+	if restored.motorAutoStopOpenSeconds != 27 || restored.motorAutoStopCloseSeconds != 18 || restored.engineMaxRuntimeSeconds != 40 {
+		t.Fatalf("motor runtime settings not restored: open=%d close=%d max=%d", restored.motorAutoStopOpenSeconds, restored.motorAutoStopCloseSeconds, restored.engineMaxRuntimeSeconds)
 	}
 }
 
