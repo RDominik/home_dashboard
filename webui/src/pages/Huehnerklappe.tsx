@@ -7,6 +7,7 @@ const API = '/api/huehnerklappe'
 type ControlMode = 'manual' | 'schedule'
 type ControlTab = ControlMode | 'test'
 type ScheduleAction = 'open' | 'close' | 'stop' | 'none'
+type MotorAction = 'open' | 'close'
 
 type Feedback = {
   type: 'success' | 'error'
@@ -159,6 +160,7 @@ export default function Huehnerklappe() {
   const [testModeEndTime, setTestModeEndTime] = useState('20:00')
   const [testModeMaxAwakeSeconds, setTestModeMaxAwakeSeconds] = useState(30)
   const [status, setStatus] = useState<HuehnerklappeStatus | null>(null)
+  const [optimisticMotorAction, setOptimisticMotorAction] = useState<MotorAction | null>(null)
   const [sending, setSending] = useState(false)
   const [feedback, setFeedback] = useState<Feedback | null>(null)
   const [battery, setBattery] = useState<string | null>(null)
@@ -177,6 +179,14 @@ export default function Huehnerklappe() {
       if (r.ok) {
         const data: HuehnerklappeStatus = await r.json()
         setStatus(data)
+        setOptimisticMotorAction(current => {
+          if (!current) return null
+          const action = String(data.lastAction ?? '').toLowerCase().trim()
+          const actionMatches = current === 'open'
+            ? action.includes('open') || action.includes('offen') || action.includes('auf')
+            : action.includes('close') || action.includes('geschlossen') || action.includes('zu')
+          return actionMatches ? null : current
+        })
         setBattery(data.battery ?? null)
         setWakeReason(data.wakeReason ?? null)
         setCharging(data.charging ?? null)
@@ -358,6 +368,10 @@ export default function Huehnerklappe() {
   }, [uiLoaded, sleepTime, motorAutoStopOpenSeconds, motorAutoStopCloseSeconds, engineMaxRuntimeSeconds, sleepUntil, controlMode, scheduleActive, scheduleTimestamps, scheduleActions, awakeSeconds, historyExpanded, testModeEnabled, testModeIntervalMinutes, testModeStartTime, testModeEndTime, testModeMaxAwakeSeconds])
 
   const sendCommand = async (key: string, value: string | number | null = null, successMessage: string | null = null) => {
+    const motorAction = key === 'engine' && (value === 'open' || value === 'close') ? value : null
+    if (key === 'engine') {
+      setOptimisticMotorAction(motorAction)
+    }
     setSending(true)
     setFeedback(null)
     try {
@@ -370,10 +384,12 @@ export default function Huehnerklappe() {
       if (data.ok) {
         setFeedback({ type: 'success', msg: successMessage ?? `✅ ${key} gesendet` })
       } else {
+        if (motorAction) setOptimisticMotorAction(null)
         setFeedback({ type: 'error', msg: `❌ ${data.error}` })
       }
       setTimeout(loadStatus, 1000)
     } catch (err) {
+      if (motorAction) setOptimisticMotorAction(null)
       const message = err instanceof Error ? err.message : String(err)
       setFeedback({ type: 'error', msg: `❌ Fehler: ${message}` })
     } finally {
@@ -809,7 +825,7 @@ export default function Huehnerklappe() {
         )}
       </div>
 
-      <ChickenDoorGraphic status={status} />
+      <ChickenDoorGraphic status={status} optimisticAction={optimisticMotorAction} />
 
       {/* Steuerung */}
       <div style={{ ...cardStyle }}>
@@ -1428,11 +1444,12 @@ function StatusItem({ label, value }: StatusItemProps) {
 
 type ChickenDoorGraphicProps = {
   status: HuehnerklappeStatus | null
+  optimisticAction: MotorAction | null
 }
 
-function ChickenDoorGraphic({ status }: ChickenDoorGraphicProps) {
+function ChickenDoorGraphic({ status, optimisticAction }: ChickenDoorGraphicProps) {
   const history = Array.isArray(status?.scheduleHistory) ? status.scheduleHistory : []
-  const normalizedAction = String(status?.lastAction ?? '').toLowerCase().trim()
+  const normalizedAction = String(optimisticAction ?? status?.lastAction ?? '').toLowerCase().trim()
   const normalizedLimitOpen = String(status?.limitOpen ?? '').toLowerCase().trim()
   const normalizedLimitClose = String(status?.limitClose ?? '').toLowerCase().trim()
   const activeLimitValues = ['active', 'on', '1', 'true', 'high', 'pressed', 'triggered', 'closed']
