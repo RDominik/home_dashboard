@@ -5,9 +5,50 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"go.etcd.io/bbolt"
 )
+
+// @brief Verifies ECU motor-state payloads start and finish runtime tracking.
+// @details Open/close indicate movement, while stop/standby are terminal
+// states. Unrelated engine health values must never be treated as movement.
+// @param t Go test context.
+func TestMotorRuntimeStateTransitions(t *testing.T) {
+	for _, state := range []string{"open", "close", "opening", "closing", "moving"} {
+		if !isMotorRunningPosition(state) {
+			t.Errorf("isMotorRunningPosition(%q) = false, want true", state)
+		}
+	}
+	for _, state := range []string{"stop", "standby", "OK", "FAIL", ""} {
+		if isMotorRunningPosition(state) {
+			t.Errorf("isMotorRunningPosition(%q) = true, want false", state)
+		}
+	}
+
+	runningSince := time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)
+	stopAt := runningSince.Add(12 * time.Second)
+	for _, state := range []string{"stop", "standby", " STOP ", "Standby"} {
+		if !isMotorRunStopped(state, stopAt, runningSince) {
+			t.Errorf("isMotorRunStopped(%q, newer timestamp) = false, want true", state)
+		}
+	}
+	for _, test := range []struct {
+		name    string
+		state   string
+		stateAt time.Time
+	}{
+		{name: "health status is not terminal", state: "OK", stateAt: stopAt},
+		{name: "old terminal snapshot is ignored", state: "standby", stateAt: runningSince},
+		{name: "missing timestamp is ignored", state: "stop"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if isMotorRunStopped(test.state, test.stateAt, runningSince) {
+				t.Errorf("isMotorRunStopped(%q, %s) = true, want false", test.state, test.stateAt)
+			}
+		})
+	}
+}
 
 // @brief Verifies supported whole-second motor runtime values and validation boundaries.
 // @details The parser accepts JSON numeric values and numeric strings, but rejects

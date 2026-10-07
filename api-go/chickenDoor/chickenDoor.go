@@ -610,21 +610,35 @@ func New(mqttManager *mqtt.Manager) *ChickenDoor {
 	return h
 }
 
-// @brief Returns true when engine_status indicates movement is still ongoing.
-// @param position Raw engine status text from MQTT.
-// @return True if status looks like moving/opening/closing, otherwise false.
+// @brief Returns true when the ECU engine state indicates active movement.
+// @param position Raw payload from nano/esp32/engine/set.
+// @return True for an open/close or explicit moving state, otherwise false.
 func isMotorRunningPosition(position string) bool {
 	value := strings.ToLower(strings.TrimSpace(position))
 	if value == "" {
 		return false
 	}
 
-	return strings.Contains(value, "opening") ||
+	return value == "open" || value == "close" ||
+		strings.Contains(value, "opening") ||
 		strings.Contains(value, "closing") ||
 		strings.Contains(value, "moving") ||
 		strings.Contains(value, "run") ||
 		strings.Contains(value, "fahrt") ||
 		strings.Contains(value, "laeuft")
+}
+
+// @brief Reports whether an ECU engine state confirms that motor movement ended.
+// @details Only explicit terminal payloads are accepted; unknown and health
+// status values such as "OK" must not stop a running-time measurement.
+// @param state Raw payload from nano/esp32/engine/set.
+// @param stateAt MQTT receive timestamp of that payload.
+// @param runningSince Start time of the motor run being measured.
+// @return True if a stop/standby update newer than the run start was received.
+func isMotorRunStopped(state string, stateAt, runningSince time.Time) bool {
+	value := strings.ToLower(strings.TrimSpace(state))
+	terminalState := value == "stop" || value == "standby"
+	return terminalState && !stateAt.IsZero() && stateAt.After(runningSince)
 }
 
 // @brief Returns true if limit switch payload indicates the switch is pressed/active.
@@ -666,13 +680,16 @@ func resolveDoorPosition(limitClose, limitOpen, engineStatus, lastAction string)
 
 // @brief Enforces automatic motor stop after the configured timeout and tracks run duration.
 //
-// When engine_status still indicates movement after the lower of the
+// When engine/set still indicates movement after the lower of the
 // direction-specific auto-stop value and the shared maximum runtime, this
 // method publishes "stop" to the engine topic, calculates the total run
-// duration, updates applicable history, and clears the running timer.
+// duration, updates applicable history, and clears the running timer. ECU
+// stop/standby transition messages finish the measurement immediately using
+// their MQTT receive time, even when the configured timeout has not elapsed.
 func (h *ChickenDoor) autoStopTick() {
 	msgs := h.mqttManager.Messages()
-	position := toString(msgs["engine_status"])
+	position := toString(msgs["engine_set"])
+	engineStateAt, hasEngineStateAt := h.firstMessageTimestamp("engine_set")
 	limitClose := toString(h.latestMessageValue(msgs, "limit_close", "limit/close"))
 	limitOpen := toString(h.latestMessageValue(msgs, "limit_open", "limit/open"))
 	runningFromMqtt := isMotorRunningPosition(position)
@@ -724,7 +741,15 @@ func (h *ChickenDoor) autoStopTick() {
 	runningAction := h.motorRunningAction
 	elapsed := now.Sub(runningSince)
 	elapsedSec := math.Round(elapsed.Seconds()*10) / 10
-	shouldStopByTimeout := elapsed >= time.Duration(timeoutSeconds)*time.Second
+	ecuConfirmedStopped := hasEngineStateAt && isMotorRunStopped(position, engineStateAt, runningSince)
+	if ecuConfirmedStopped {
+		// Use the ECU's state receive time rather than the later one-second
+		// backend polling tick so completed motor duration does not accrue while
+		// the motor is already stopped or in standby.
+		elapsed = engineStateAt.Sub(runningSince)
+		elapsedSec = math.Round(elapsed.Seconds()*10) / 10
+	}
+	shouldStopByTimeout := !ecuConfirmedStopped && elapsed >= time.Duration(timeoutSeconds)*time.Second
 
 	closeActive := isLimitActive(limitClose)
 	openActive := isLimitActive(limitOpen)
@@ -757,15 +782,14 @@ func (h *ChickenDoor) autoStopTick() {
 		}
 	}
 
-	// Movement concludes when:
-	// 1) Target limit switch was hit, OR
-	// 2) Auto-stop timeout expired.
-	movementDone := false
-	if !h.motorLimitReachedAt.IsZero() {
+	// Movement concludes when the ECU explicitly reports stop/standby, the
+	// target limit switch has settled, or the configured timeout has expired.
+	movementDone := ecuConfirmedStopped
+	if !movementDone && !h.motorLimitReachedAt.IsZero() {
 		if now.Sub(h.motorLimitReachedAt) >= 500*time.Millisecond || !runningFromMqtt {
 			movementDone = true
 		}
-	} else if shouldStopByTimeout {
+	} else if !movementDone && shouldStopByTimeout {
 		movementDone = true
 	}
 
