@@ -15,6 +15,7 @@ import (
 
 const scheduleActiveTopic = nanoSetPrefix + "/schedule_active"
 const scheduleRetryDelay = 5 * time.Second
+const scheduleEarlyWakeTolerance = 5 * time.Second
 const scheduleHistorySize = 20
 const defaultScheduleTimezone = "Europe/Berlin"
 
@@ -486,10 +487,17 @@ func (h *ChickenDoor) updateStateTracking(controllerState, sleepState string, st
 		if h.scheduleActive {
 			beforePlanned, lead := h.classifyWakeTiming(stateTs)
 			if beforePlanned {
-				h.scheduleSleepPending = true
-				h.scheduleEarlyWakePending = true
-				h.scheduleWakeAt = time.Now()
-				log.Printf("[chickendoor-schedule] early wake (%s) -> skip action, schedule sleep until planned wake", lead.Round(time.Second))
+				if lead <= scheduleEarlyWakeTolerance {
+					h.scheduleSleepPending = false
+					h.scheduleEarlyWakePending = false
+					h.scheduleWakeAt = time.Now().Add(lead)
+					log.Printf("[chickendoor-schedule] early wake (%s) -> stay online until planned action", lead.Round(time.Second))
+				} else {
+					h.scheduleSleepPending = true
+					h.scheduleEarlyWakePending = true
+					h.scheduleWakeAt = time.Now()
+					log.Printf("[chickendoor-schedule] early wake (%s) -> skip action, schedule sleep until planned wake", lead.Round(time.Second))
+				}
 			} else {
 				h.scheduleWakeAt = time.Now()
 				log.Printf("[chickendoor-schedule] wake on/after planned time -> execute normal action")
@@ -506,10 +514,9 @@ func (h *ChickenDoor) updateStateTracking(controllerState, sleepState string, st
 // @brief Performs one schedule transition tick and arms the next sleep cycle.
 func (h *ChickenDoor) scheduleTick() {
 	msgs := h.mqttManager.Messages()
-	controllerState := toString(msgs["status"])
+	controllerState, stateTs, hasStateTs := h.latestControllerStateMessage()
 	sleepState := toString(firstValue(msgs, "sleepms/status", "sleepms_status"))
-	stateTs, hasStateTs := h.firstMessageTimestamp("status", "sleepms/status", "sleepms_status")
-	h.updateStateTracking(controllerState, sleepState, stateTs, hasStateTs)
+	h.updateStateTracking(controllerState, "", stateTs, hasStateTs)
 
 	h.mu.Lock()
 	active := h.scheduleActive
@@ -524,6 +531,15 @@ func (h *ChickenDoor) scheduleTick() {
 	}
 	if time.Now().Before(wakeAt) || currentState == "sleeping" || currentState == "offline" {
 		return
+	}
+	if currentState != "online" {
+		return
+	}
+	h.mu.Lock()
+	sleepUnacknowledged := len(h.scheduleHistory) > 0 && h.scheduleHistory[len(h.scheduleHistory)-1].SleepingAtMs == 0
+	h.mu.Unlock()
+	if sleepUnacknowledged {
+		log.Printf("[chickendoor-schedule] sleep was not acknowledged by deadline; continue while controller is online")
 	}
 
 	h.mu.Lock()

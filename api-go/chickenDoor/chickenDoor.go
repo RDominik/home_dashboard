@@ -49,6 +49,8 @@ type StatusResponse struct {
 	ScheduleActive   bool                   `json:"scheduleActive"`
 	ScheduleTimezone string                 `json:"scheduleTimezone"`
 	ServerNowMs      int64                  `json:"serverNowMs"`
+	// MotorRunningSinceMs is the UTC epoch start of the active run, when present.
+	MotorRunningSinceMs int64 `json:"motorRunningSinceMs,omitempty"`
 	SleepCommandAtMs int64                  `json:"sleepCommandAtMs,omitempty"`
 	SleepingAtMs     int64                  `json:"sleepingAtMs,omitempty"`
 	OnlineAtMs       int64                  `json:"onlineAtMs,omitempty"`
@@ -136,6 +138,13 @@ func unixMillisOrZero(ts time.Time) int64 {
 	return ts.UnixMilli()
 }
 
+// @brief Returns a pointer to a boolean value for optional JSON fields.
+// @param value Boolean value to retain, including explicit false.
+// @return Pointer to an independent copy of value.
+func boolPointer(value bool) *bool {
+	return &value
+}
+
 type ChickenDoor struct {
 	mqttManager *mqtt.Manager
 	db          *bbolt.DB
@@ -171,6 +180,8 @@ type ChickenDoor struct {
 	sleepUntil              string
 	controlMode             string
 	historyExpanded         bool
+	// statusExpanded stores the shared UI preference for the status panel.
+	statusExpanded          bool
 	// Test-mode settings persist the explicit enable flag and minute interval
 	// independently from the timestamp schedule; schedule activity pauses tests.
 	testModeEnabled bool
@@ -261,6 +272,7 @@ type persistedState struct {
 	SleepUntil              string `json:"sleepUntil"`
 	ControlMode             string `json:"controlMode"`
 	HistoryExpanded         bool   `json:"historyExpanded"`
+	StatusExpanded          *bool  `json:"statusExpanded,omitempty"`
 	LastStatusPosition      string `json:"lastStatusPosition"`
 	LastStatusAction        string `json:"lastStatusAction"`
 	LastStatusBattery       string `json:"lastStatusBattery"`
@@ -283,6 +295,7 @@ type uiStateRequest struct {
 	SleepUntil              string          `json:"sleepUntil"`
 	ControlMode             string          `json:"controlMode"`
 	HistoryExpanded         bool            `json:"historyExpanded"`
+	StatusExpanded          *bool           `json:"statusExpanded,omitempty"`
 	ScheduleTimestamps      []string        `json:"scheduleTimestamps"`
 	ScheduleEntries         []ScheduleEntry `json:"scheduleEntries"`
 	AwakeSeconds            int             `json:"awakeSeconds"`
@@ -489,6 +502,9 @@ func (h *ChickenDoor) loadPersistedState() {
 	h.sleepUntil = state.SleepUntil
 	h.controlMode = state.ControlMode
 	h.historyExpanded = state.HistoryExpanded
+	if state.StatusExpanded != nil {
+		h.statusExpanded = *state.StatusExpanded
+	}
 	h.lastStatusPosition = state.LastStatusPosition
 	h.lastStatusAction = state.LastStatusAction
 	h.lastStatusBattery = state.LastStatusBattery
@@ -559,6 +575,7 @@ func (h *ChickenDoor) persistState() {
 		SleepUntil:                h.sleepUntil,
 		ControlMode:               h.controlMode,
 		HistoryExpanded:           h.historyExpanded,
+		StatusExpanded:            boolPointer(h.statusExpanded),
 		LastStatusPosition:        h.lastStatusPosition,
 		LastStatusAction:          h.lastStatusAction,
 		LastStatusBattery:         h.lastStatusBattery,
@@ -600,6 +617,7 @@ func New(mqttManager *mqtt.Manager) *ChickenDoor {
 		motorAutoStopOpenSeconds:  defaultMotorAutoStopSeconds,
 		motorAutoStopCloseSeconds: defaultMotorAutoStopSeconds,
 		engineMaxRuntimeSeconds:   defaultEngineMaxRuntimeSeconds,
+		statusExpanded:            true,
 		testModeIntervalMinutes:   30,
 		testModeStartTime:         "08:00",
 		testModeEndTime:           "20:00",
@@ -958,6 +976,37 @@ func (h *ChickenDoor) firstMessageTimestamp(keys ...string) (time.Time, bool) {
 	return time.Time{}, false
 }
 
+// @brief Selects the most recently received controller state from its MQTT topics.
+// @return Raw state value, receive timestamp, and whether a state was available.
+func (h *ChickenDoor) latestControllerStateMessage() (string, time.Time, bool) {
+	if h.mqttManager == nil {
+		return "", time.Time{}, false
+	}
+	status, statusAt, hasStatus := h.mqttManager.MessageWithTimestamp("status")
+	sleepState, sleepAt, hasSleepState := h.mqttManager.MessageWithTimestamp("sleepms_status")
+	if !hasSleepState {
+		sleepState, sleepAt, hasSleepState = h.mqttManager.MessageWithTimestamp("sleepms/status")
+	}
+	return selectLatestControllerState(
+		toString(status), statusAt, hasStatus,
+		toString(sleepState), sleepAt, hasSleepState,
+	)
+}
+
+// @brief Chooses the newest of the controller and sleep-state MQTT messages.
+// @param status Main controller status and receive timestamp.
+// @param sleepState Sleep status and receive timestamp.
+// @return Raw value and timestamp for the newest available message.
+func selectLatestControllerState(status string, statusAt time.Time, hasStatus bool, sleepState string, sleepAt time.Time, hasSleepState bool) (string, time.Time, bool) {
+	if !hasStatus {
+		return sleepState, sleepAt, hasSleepState
+	}
+	if hasSleepState && sleepAt.After(statusAt) {
+		return sleepState, sleepAt, true
+	}
+	return status, statusAt, true
+}
+
 // @brief Writes a JSON response with Content-Type application/json.
 // @param w HTTP response writer.
 // @param data Any serializable response object.
@@ -1064,8 +1113,8 @@ func (h *ChickenDoor) StatusHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	h.mu.Unlock()
 
-	stateTs, hasStateTs := h.firstMessageTimestamp("status", "sleepms/status", "sleepms_status")
-	h.updateStateTracking(controllerState, sleepState, stateTs, hasStateTs)
+	latestState, stateTs, hasStateTs := h.latestControllerStateMessage()
+	h.updateStateTracking(latestState, "", stateTs, hasStateTs)
 
 	// End switches are authoritative for a final position. The current engine
 	// action is only a fallback while the door is moving or between positions.
@@ -1093,6 +1142,7 @@ func (h *ChickenDoor) StatusHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	historyCopy := append([]ScheduleHistoryEntry(nil), h.scheduleHistory...)
 	testModeHistoryCopy := append([]TestModeHistoryEntry(nil), h.testModeHistory...)
+	motorRunningSinceMs := unixMillisOrZero(h.motorRunningSince)
 
 	status := StatusResponse{
 		Position:             doorPos,
@@ -1108,6 +1158,7 @@ func (h *ChickenDoor) StatusHandler(w http.ResponseWriter, r *http.Request) {
 		ScheduleActive:       h.scheduleActive,
 		ScheduleTimezone:     scheduleNow().Location().String(),
 		ServerNowMs:          time.Now().UnixMilli(),
+		MotorRunningSinceMs:  motorRunningSinceMs,
 		SleepCommandAtMs:     unixMillisOrZero(h.lastSleepCommandAt),
 		SleepingAtMs:         unixMillisOrZero(h.sleepingAt),
 		OnlineAtMs:           unixMillisOrZero(h.onlineAt),
@@ -1185,6 +1236,7 @@ func (h *ChickenDoor) UIStateHandler(w http.ResponseWriter, r *http.Request) {
 			"sleepUntil":                h.sleepUntil,
 			"controlMode":               h.controlMode,
 			"historyExpanded":           h.historyExpanded,
+			"statusExpanded":            h.statusExpanded,
 			"scheduleTimestamps":        append([]string(nil), h.scheduleTimestamps...),
 			"scheduleEntries":           append([]ScheduleEntry(nil), h.scheduleEntries...),
 			"awakeSeconds":              h.scheduleAwakeSeconds,
@@ -1274,6 +1326,9 @@ func (h *ChickenDoor) UIStateHandler(w http.ResponseWriter, r *http.Request) {
 			h.controlMode = req.ControlMode
 		}
 		h.historyExpanded = req.HistoryExpanded
+		if req.StatusExpanded != nil {
+			h.statusExpanded = *req.StatusExpanded
+		}
 		if req.AwakeSeconds >= 0 {
 			h.scheduleAwakeSeconds = req.AwakeSeconds
 		}

@@ -63,6 +63,7 @@ type HuehnerklappeStatus = {
   scheduleActive?: boolean
   scheduleTimezone?: string
   serverNowMs?: number
+  motorRunningSinceMs?: number
   sleepCommandAtMs?: number
   sleepingAtMs?: number
   onlineAtMs?: number
@@ -90,6 +91,7 @@ type UiStateResponse = {
   scheduleEntries?: Array<{ timestamp?: string; action?: ScheduleAction }>
   awakeSeconds?: number
   historyExpanded?: boolean
+  statusExpanded?: boolean
   testModeEnabled?: boolean
   testModeIntervalMinutes?: number
   testModeStartTime?: string
@@ -154,6 +156,7 @@ export default function Huehnerklappe() {
   const [pickerIndex, setPickerIndex] = useState<number | null>(null)
   const [pickerDraft, setPickerDraft] = useState<PickerDraft>({ hour: '00', minute: '00', second: '00' })
   const [historyExpanded, setHistoryExpanded] = useState(false)
+  const [statusExpanded, setStatusExpanded] = useState(true)
   const [testModeEnabled, setTestModeEnabled] = useState(false)
   const [testModeIntervalMinutes, setTestModeIntervalMinutes] = useState(30)
   const [testModeStartTime, setTestModeStartTime] = useState('08:00')
@@ -167,6 +170,7 @@ export default function Huehnerklappe() {
   const [wakeReason, setWakeReason] = useState<string | null>(null)
   const [charging, setCharging] = useState<string | null>(null)
   const [clockOffsetMs, setClockOffsetMs] = useState(0)
+  const [runtimeNowMs, setRuntimeNowMs] = useState(Date.now())
   const [uiLoaded, setUiLoaded] = useState(false)
   const [settingsSaveError, setSettingsSaveError] = useState('')
   const uiStateSaveQueueRef = useRef<Promise<void>>(Promise.resolve())
@@ -272,6 +276,9 @@ export default function Huehnerklappe() {
       if (typeof data.historyExpanded === 'boolean') {
         setHistoryExpanded(data.historyExpanded)
       }
+      if (typeof data.statusExpanded === 'boolean') {
+        setStatusExpanded(data.statusExpanded)
+      }
       if (typeof data.testModeEnabled === 'boolean') {
         setTestModeEnabled(data.testModeEnabled)
       }
@@ -311,6 +318,15 @@ export default function Huehnerklappe() {
   }, [])
 
   useEffect(() => {
+    if (!status?.motorRunningSinceMs) {
+      return
+    }
+
+    const timer = window.setInterval(() => setRuntimeNowMs(Date.now()), 250)
+    return () => window.clearInterval(timer)
+  }, [status?.motorRunningSinceMs])
+
+  useEffect(() => {
     if (!uiLoaded) {
       return
     }
@@ -330,6 +346,7 @@ export default function Huehnerklappe() {
       })),
       awakeSeconds,
       historyExpanded,
+      statusExpanded,
       testModeEnabled,
       testModeIntervalMinutes,
       testModeStartTime,
@@ -365,7 +382,7 @@ export default function Huehnerklappe() {
     }, 250)
 
     return () => window.clearTimeout(timer)
-  }, [uiLoaded, sleepTime, motorAutoStopOpenSeconds, motorAutoStopCloseSeconds, engineMaxRuntimeSeconds, sleepUntil, controlMode, scheduleActive, scheduleTimestamps, scheduleActions, awakeSeconds, historyExpanded, testModeEnabled, testModeIntervalMinutes, testModeStartTime, testModeEndTime, testModeMaxAwakeSeconds])
+  }, [uiLoaded, sleepTime, motorAutoStopOpenSeconds, motorAutoStopCloseSeconds, engineMaxRuntimeSeconds, sleepUntil, controlMode, scheduleActive, scheduleTimestamps, scheduleActions, awakeSeconds, historyExpanded, statusExpanded, testModeEnabled, testModeIntervalMinutes, testModeStartTime, testModeEndTime, testModeMaxAwakeSeconds])
 
   const sendCommand = async (key: string, value: string | number | null = null, successMessage: string | null = null) => {
     const motorAction = key === 'engine' && (value === 'open' || value === 'close') ? value : null
@@ -797,13 +814,29 @@ export default function Huehnerklappe() {
 
       {/* Status */}
       <div style={{ ...cardStyle, marginBottom: 16 }}>
-        <h3 style={{ marginTop: 0, color: '#374151' }}>📊 Aktueller Status</h3>
-        {status ? (
+        <button
+          type="button"
+          aria-expanded={statusExpanded}
+          aria-controls="chicken-door-current-status"
+          onClick={() => setStatusExpanded(expanded => !expanded)}
+          style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 0 12px', border: 0, background: 'transparent', color: '#374151', cursor: 'pointer', textAlign: 'left' }}
+        >
+          <h3 style={{ margin: 0, color: '#374151' }}>📊 Aktueller Status</h3>
+          <span aria-hidden="true">{statusExpanded ? '▾' : '▸'}</span>
+        </button>
+        {statusExpanded && <div id="chicken-door-current-status">
+          {status ? (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 210px), 1fr))', gap: 12 }}>
             <StatusItem label="Akku" value={battery !== null && battery !== '' ? `${battery}%` : '—'} />
             <StatusItem label="Charging" value={charging ?? '—'} />
             <StatusItem label="IP" value={status.ip ?? '—'} />
             <StatusItem label="Position" value={formatPositionLabel(status.position)} />
+            <StatusItem
+              label="Aktuelle Motorlaufzeit"
+              value={status.motorRunningSinceMs
+                ? `${Math.max(0, (runtimeNowMs - (status.motorRunningSinceMs + clockOffsetMs)) / 1000).toFixed(1)} s`
+                : '—'}
+            />
             <StatusItem label="Endschalter ZU" value={status.limitClose ?? '—'} />
             <StatusItem label="Endschalter AUF" value={status.limitOpen ?? '—'} />
             <StatusItem label="Letzte Aktion" value={status.lastAction ?? '—'} />
@@ -823,6 +856,7 @@ export default function Huehnerklappe() {
         ) : (
           <p style={{ color: '#9ca3af' }}>Lade Status…</p>
         )}
+        </div>}
       </div>
 
       <ChickenDoorGraphic status={status} optimisticAction={optimisticMotorAction} />
