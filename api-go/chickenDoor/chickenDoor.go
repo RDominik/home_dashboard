@@ -35,27 +35,27 @@ const defaultEngineMaxRuntimeSeconds = 60
 // the test mode's activation, daily-window eligibility, upcoming action, and
 // operational state for the page's status panel.
 type StatusResponse struct {
-	Position         string                 `json:"position"`
-	LastAction       string                 `json:"lastAction"`
-	Error            string                 `json:"error,omitempty"`
-	Battery          string                 `json:"battery"`
-	WakeReason       string                 `json:"wakeReason"`
-	ControllerState  string                 `json:"controllerState"`
-	SleepState       string                 `json:"sleepState"`
-	IP               string                 `json:"ip"`
-	Charging         string                 `json:"charging"`
-	LimitClose       string                 `json:"limitClose,omitempty"`
-	LimitOpen        string                 `json:"limitOpen,omitempty"`
-	ScheduleActive   bool                   `json:"scheduleActive"`
-	ScheduleTimezone string                 `json:"scheduleTimezone"`
-	ServerNowMs      int64                  `json:"serverNowMs"`
+	Position         string `json:"position"`
+	LastAction       string `json:"lastAction"`
+	Error            string `json:"error,omitempty"`
+	Battery          string `json:"battery"`
+	WakeReason       string `json:"wakeReason"`
+	ControllerState  string `json:"controllerState"`
+	SleepState       string `json:"sleepState"`
+	IP               string `json:"ip"`
+	Charging         string `json:"charging"`
+	LimitClose       string `json:"limitClose,omitempty"`
+	LimitOpen        string `json:"limitOpen,omitempty"`
+	ScheduleActive   bool   `json:"scheduleActive"`
+	ScheduleTimezone string `json:"scheduleTimezone"`
+	ServerNowMs      int64  `json:"serverNowMs"`
 	// MotorRunningSinceMs is the UTC epoch start of the active run, when present.
-	MotorRunningSinceMs int64 `json:"motorRunningSinceMs,omitempty"`
-	SleepCommandAtMs int64                  `json:"sleepCommandAtMs,omitempty"`
-	SleepingAtMs     int64                  `json:"sleepingAtMs,omitempty"`
-	OnlineAtMs       int64                  `json:"onlineAtMs,omitempty"`
-	WakeDeltaMs      int64                  `json:"wakeDeltaMs,omitempty"`
-	ScheduleHistory  []ScheduleHistoryEntry `json:"scheduleHistory,omitempty"`
+	MotorRunningSinceMs int64                  `json:"motorRunningSinceMs,omitempty"`
+	SleepCommandAtMs    int64                  `json:"sleepCommandAtMs,omitempty"`
+	SleepingAtMs        int64                  `json:"sleepingAtMs,omitempty"`
+	OnlineAtMs          int64                  `json:"onlineAtMs,omitempty"`
+	WakeDeltaMs         int64                  `json:"wakeDeltaMs,omitempty"`
+	ScheduleHistory     []ScheduleHistoryEntry `json:"scheduleHistory,omitempty"`
 	// TestModeHistory contains the latest alternating test-action cycles.
 	TestModeHistory []TestModeHistoryEntry `json:"testModeHistory,omitempty"`
 	// TestModeEnabled reports the persisted explicit enable selection.
@@ -181,7 +181,7 @@ type ChickenDoor struct {
 	controlMode             string
 	historyExpanded         bool
 	// statusExpanded stores the shared UI preference for the status panel.
-	statusExpanded          bool
+	statusExpanded bool
 	// Test-mode settings persist the explicit enable flag and minute interval
 	// independently from the timestamp schedule; schedule activity pauses tests.
 	testModeEnabled bool
@@ -1390,6 +1390,9 @@ func (h *ChickenDoor) UIStateHandler(w http.ResponseWriter, r *http.Request) {
 func (cd *ChickenDoor) Run() {
 	cd.ctx, cd.cancel = context.WithCancel(context.Background())
 	log.Println("🐔 ChickenDoor service starting...")
+	if cd.prepareScheduleStartup() {
+		go cd.publishScheduleActive(true, "startup-restore")
+	}
 
 	go cd.runLoop()
 }

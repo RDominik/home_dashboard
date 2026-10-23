@@ -63,6 +63,49 @@ func (h *ChickenDoor) publishScheduleActive(active bool, reason string) {
 	log.Printf("[chickendoor-schedule] published %s=%t (%s)", scheduleActiveTopic, active, reason)
 }
 
+// @brief Re-arms a selected schedule after restoring persisted state at startup.
+// @details
+// An active schedule's in-memory wake deadline is intentionally not persisted,
+// because it is reconstructed from controller state transitions. A selected
+// schedule with valid entries therefore receives a fresh due deadline so the
+// first online controller state can resume its pending action or arm the next
+// sleep cycle. Existing pending actions and post-action sleep state are kept;
+// a new sleep cycle is requested only when neither was already in progress.
+// @return True when a configured schedule was selected and is ready to run.
+func (h *ChickenDoor) prepareScheduleStartup() bool {
+	h.mu.Lock()
+	entries := append([]ScheduleEntry(nil), h.scheduleEntries...)
+	if len(entries) == 0 {
+		for _, timestamp := range h.scheduleTimestamps {
+			entries = append(entries, ScheduleEntry{Timestamp: timestamp, Action: "none"})
+		}
+	}
+	selected := h.scheduleActive || h.controlMode == "schedule"
+	validEntries := len(entries) > 0
+	for _, entry := range entries {
+		if !isValidScheduleTimestamp(strings.TrimSpace(entry.Timestamp)) {
+			validEntries = false
+			break
+		}
+	}
+	if !selected || !validEntries {
+		h.mu.Unlock()
+		return false
+	}
+
+	h.scheduleActive = true
+	h.controlMode = "schedule"
+	h.scheduleWakeAt = time.Now()
+	if h.pendingScheduleAction == "" && !h.scheduleSleepPending {
+		h.scheduleSleepPending = true
+	}
+	h.mu.Unlock()
+
+	h.persistState()
+	log.Printf("[chickendoor-schedule] restored selected schedule with %d entries", len(entries))
+	return true
+}
+
 // @brief Describes the HTTP payload used to configure the sleep schedule.
 type sleepScheduleRequest struct {
 	Count        int      `json:"count"`

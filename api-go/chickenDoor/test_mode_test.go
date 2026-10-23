@@ -180,6 +180,15 @@ func TestAllChickenDoorSettingsPersistThroughUIState(t *testing.T) {
 	if restored.scheduleAwakeSeconds != 45 || len(restored.scheduleEntries) != 1 || restored.scheduleEntries[0] != (ScheduleEntry{Timestamp: "06:30:00", Action: "open"}) {
 		t.Fatalf("schedule settings not restored: awake=%d entries=%#v", restored.scheduleAwakeSeconds, restored.scheduleEntries)
 	}
+	if restored.scheduleActive {
+		t.Fatal("test setup expected the schedule to be inactive before startup")
+	}
+	if !restored.prepareScheduleStartup() {
+		t.Fatal("persisted schedule selection was not prepared at startup")
+	}
+	if !restored.scheduleActive || restored.controlMode != "schedule" || !restored.scheduleSleepPending || restored.scheduleWakeAt.IsZero() {
+		t.Fatalf("schedule was not re-armed: active=%t mode=%q sleepPending=%t wakeAt=%s", restored.scheduleActive, restored.controlMode, restored.scheduleSleepPending, restored.scheduleWakeAt)
+	}
 	if restored.motorAutoStopOpenSeconds != 27 || restored.motorAutoStopCloseSeconds != 18 || restored.engineMaxRuntimeSeconds != 40 {
 		t.Fatalf("motor runtime settings not restored: open=%d close=%d max=%d", restored.motorAutoStopOpenSeconds, restored.motorAutoStopCloseSeconds, restored.engineMaxRuntimeSeconds)
 	}
