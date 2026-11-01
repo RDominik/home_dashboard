@@ -133,6 +133,7 @@ func main() {
 
 	// Shared REST services
 	mux.HandleFunc("/api/weather/", restService.APIHandler)
+	mux.HandleFunc("/api/waste-calendar/", restService.APIHandler)
 
 	// Inverter
 	mux.HandleFunc("/api/inverter/summary", inverterSummary)

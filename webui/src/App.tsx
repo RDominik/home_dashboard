@@ -27,6 +27,7 @@ export default function App() {
           <NavLink to="/goE" className="app-sidebar-link">goE</NavLink>
           <NavLink to="/huehnerklappe" className="app-sidebar-link">Motor</NavLink>
           <NavLink to="/weather" className="app-sidebar-link">Wetterstation</NavLink>
+          <NavLink to="/abfallkalender" className="app-sidebar-link">Abfallkalender</NavLink>
           <NavLink to="/heating" className="app-sidebar-link">ETA Heizung</NavLink>
           <NavLink to="/grafana" className="app-sidebar-link">Grafana</NavLink>
           <NavLink to="/update" className="app-sidebar-link">Update</NavLink>

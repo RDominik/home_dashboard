@@ -35,6 +35,10 @@ Ziel: Einfache Weboberfläche mit Seitenleiste, um verschiedene Dashboards anzuz
 	- Ein eigener Testmodus-Verlauf zeigt die letzten 20 Zyklen einschließlich Aktion, Startzeit, Position, Motorlaufzeit, Akku-Rohwert, Wachzeit, Sleep-Befehl sowie Schlaf- und Aufwachbestätigung. Einstellungen werden über die UI-State-API serverseitig gespeichert; Verlauf und Runtime-Zustand bleiben in bbolt erhalten.
 	- Das Zeitfenster umfasst den Start, aber nicht das Ende und kann Mitternacht überschreiten. Bei aktivem Timestamp-Schedule pausiert der Testmodus; ein bei nicht verfügbarem Controller fälliger Einzelauftrag wird bis zur Wiederverbindung gehalten.
 
+- `Abfallkalender.tsx`
+	- Zeigt das originale Awido-Kalender-Widget für Stadt Riedenburg, Ortsteil Jachenhausen.
+	- Das Backend lädt den Kalender beim Start und im konfigurierten Wochenintervall; das Intervall wird serverseitig in bbolt gespeichert und ist über die Seiteneinstellungen änderbar.
+
 - `Heating.tsx` (+ `Heating.css`)
 	- ETA-Heizungsansicht.
 

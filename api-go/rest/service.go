@@ -18,14 +18,15 @@ const sunTimesMQTTPrefix = "nano/esp32/suntime"
 // and domain behavior in their respective modules while providing one lifecycle
 // owner for application startup and shutdown.
 type RestService struct {
-	ctx         context.Context
-	cancel      context.CancelFunc
-	done        chan struct{}
-	configPath  string
-	mqttManager *mqtt.Manager
-	topic       string
-	interval    time.Duration
-	weather     *WeatherService
+	ctx           context.Context
+	cancel        context.CancelFunc
+	done          chan struct{}
+	configPath    string
+	mqttManager   *mqtt.Manager
+	topic         string
+	interval      time.Duration
+	weather       *WeatherService
+	wasteCalendar *WasteCalendarService
 }
 
 // @brief Creates a RestService and all REST-backed services.
@@ -42,16 +43,22 @@ func NewRestService(configPath string, topic string, interval time.Duration) (*R
 	if interval <= 0 {
 		interval = 60 * time.Second
 	}
-	weather, err := NewWeatherService(weatherDBPath)
+	wasteCalendar, err := NewWasteCalendarService(wasteCalendarDBPath, wasteCalendarDefaultURL)
 	if err != nil {
 		return nil, err
 	}
+	weather, err := NewWeatherService(weatherDBPath)
+	if err != nil {
+		wasteCalendar.Stop()
+		return nil, err
+	}
 	return &RestService{
-		configPath: configPath,
-		topic:      topic,
-		interval:   interval,
-		done:       make(chan struct{}),
-		weather:    weather,
+		configPath:    configPath,
+		topic:         topic,
+		interval:      interval,
+		done:          make(chan struct{}),
+		weather:       weather,
+		wasteCalendar: wasteCalendar,
 	}, nil
 }
 
@@ -73,6 +80,7 @@ func (rs *RestService) Start(mqttManager *mqtt.Manager) {
 	// values even when the next daily forecast refresh is still rate-limited.
 	rs.publishSunTimes(rs.weather.GetSunTimes())
 	rs.weather.Start()
+	rs.wasteCalendar.Start()
 	log.Printf("📡 REST service starting (interval: %v, topic: %s)...", rs.interval, rs.topic)
 
 	go rs.runLoop()
@@ -137,5 +145,8 @@ func (rs *RestService) Stop() {
 	}
 	if rs.weather != nil {
 		rs.weather.Stop()
+	}
+	if rs.wasteCalendar != nil {
+		rs.wasteCalendar.Stop()
 	}
 }

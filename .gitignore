@@ -6,3 +6,5 @@ api/venv/*
 api/*
 api-go/rest-service
 api-go/webgui-api
+api-go/data/*.db
+api-go/rest/eta_menu.json

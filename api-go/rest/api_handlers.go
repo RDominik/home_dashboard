@@ -19,12 +19,62 @@ func (rs *RestService) APIHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/api/weather/status", "/api/weather/settings", "/api/weather/refresh":
 		rs.weatherAPIHandler(w, r)
+	case "/api/waste-calendar/status", "/api/waste-calendar/settings", "/api/waste-calendar/refresh":
+		rs.wasteCalendarAPIHandler(w, r)
 	case "/api/heating/summary":
 		HeatingSummary(w, r)
 	case "/api/heating/history":
 		HeatingHistory(w, r)
 	default:
 		http.Error(w, "unknown REST endpoint", http.StatusNotFound)
+	}
+}
+
+// @brief Dispatches the supported waste-calendar API operations.
+// @details The handler delegates state and upstream-refresh work to WasteCalendarService while keeping all HTTP routing in api_handlers.go.
+// @param[in,out] w HTTP response writer used for JSON responses.
+// @param[in] r Incoming request for the calendar status, settings, or refresh endpoint.
+func (rs *RestService) wasteCalendarAPIHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.URL.Path {
+	case "/api/waste-calendar/status":
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			apiJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		apiJSON(w, http.StatusOK, rs.wasteCalendar.Status())
+	case "/api/waste-calendar/settings":
+		switch r.Method {
+		case http.MethodGet:
+			apiJSON(w, http.StatusOK, rs.wasteCalendar.Settings())
+		case http.MethodPut:
+			var settings WasteCalendarSettings
+			if err := json.NewDecoder(r.Body).Decode(&settings); err != nil {
+				apiJSON(w, http.StatusBadRequest, map[string]string{"error": "ungültiger JSON body"})
+				return
+			}
+			if err := rs.wasteCalendar.SetSettings(settings); err != nil {
+				apiJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+				return
+			}
+			apiJSON(w, http.StatusOK, map[string]any{"ok": true, "settings": rs.wasteCalendar.Settings()})
+		default:
+			w.Header().Set("Allow", "GET, PUT")
+			apiJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		}
+	case "/api/waste-calendar/refresh":
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
+			apiJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		if err := rs.wasteCalendar.RequestRefresh(); err != nil {
+			apiJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+			return
+		}
+		apiJSON(w, http.StatusAccepted, map[string]any{"ok": true})
+	default:
+		apiJSON(w, http.StatusNotFound, map[string]string{"error": "unknown waste-calendar endpoint"})
 	}
 }
 

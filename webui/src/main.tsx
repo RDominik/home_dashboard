@@ -11,6 +11,7 @@ import GoE from './pages/goE'
 import Huehnerklappe from './pages/Huehnerklappe'
 import EnyaqPage from './pages/Enyaq'
 import Weather from './pages/Weather'
+import Abfallkalender from './pages/Abfallkalender'
 
 const router = createBrowserRouter([
   {
@@ -25,7 +26,8 @@ const router = createBrowserRouter([
       { path: 'huehnerklappe', element: <Huehnerklappe /> },
       { path: 'goE', element: <GoE /> },
       { path: 'update', element: <UpdatePage /> },
-      { path: 'weather', element: <Weather /> }
+      { path: 'weather', element: <Weather /> },
+      { path: 'abfallkalender', element: <Abfallkalender /> },
     ],
   },
 ])
