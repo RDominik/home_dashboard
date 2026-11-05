@@ -11,6 +11,114 @@
   font-family: 'Poppins', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
+.app-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.app-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: 20px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overflow-anchor: none;
+}
+
+.global-status-bar {
+  z-index: 5;
+  display: grid;
+  flex-shrink: 0;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  min-height: 54px;
+  padding: 0 12px;
+  border-top: 1px solid #272727;
+  background: #111111;
+  color: #fff;
+  font-family: 'Poppins', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.global-status-item {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-right: 1px solid #272727;
+}
+
+.global-status-item:last-child {
+  border-right: 0;
+}
+
+.global-status-icon {
+  flex-shrink: 0;
+  width: 25px;
+  color: #fff;
+  font-size: 19px;
+  line-height: 1;
+  text-align: center;
+}
+
+.global-status-copy {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.global-status-label {
+  overflow: hidden;
+  color: #d3d3d3;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.global-status-value {
+  overflow: hidden;
+  color: #fff;
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.global-status-detail {
+  overflow: hidden;
+  color: #aaa;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.global-pickup-line,
+.global-pickup-icons {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.global-pickup-line {
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.global-pickup-icons {
+  flex-shrink: 0;
+  gap: 5px;
+  font-size: 16px;
+  line-height: 1;
+}
+
 .app-sidebar-title {
   margin: 0 8px 16px;
   color: #ffffff;
@@ -77,5 +185,61 @@
   .app-sidebar {
     width: 210px;
     padding-inline: 8px;
+  }
+
+  .app-main {
+    padding: 10px;
+  }
+
+  .global-status-bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0;
+    min-height: 64px;
+    padding: 2px 4px;
+  }
+
+  .global-status-item {
+    gap: 4px;
+    padding: 2px 4px;
+    border-right: 0;
+  }
+
+  .global-status-icon {
+    width: 17px;
+    font-size: 14px;
+  }
+
+  .global-status-copy {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+  }
+
+  .global-status-label {
+    font-size: 9px;
+    letter-spacing: 0;
+  }
+
+  .global-status-value {
+    font-size: 11px;
+  }
+
+  .global-status-detail {
+    display: none;
+  }
+
+  .global-pickup-line {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 2px 6px;
+  }
+
+  .global-pickup-line .global-status-value {
+    flex: 0 0 auto;
+  }
+
+  .global-pickup-icons {
+    gap: 2px;
+    font-size: 12px;
   }
 }

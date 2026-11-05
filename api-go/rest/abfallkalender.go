@@ -7,8 +7,11 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -24,6 +27,8 @@ const (
 	wasteCalendarDBPath               = "data/waste_calendar.db"
 	wasteCalendarBucket               = "wasteCalendar"
 	wasteCalendarStateKey             = "state"
+	wasteCalendarLocationID           = "00000000-0000-0000-0000-000000001228"
+	wasteCalendarFractionIDs          = "2,6,9,11,12"
 )
 
 // @brief Contains the user-configurable waste-calendar refresh interval.
@@ -56,14 +61,26 @@ type WasteCalendarStatus struct {
 	Refreshing bool `json:"refreshing"`
 	// @brief Latest upstream error, empty after a successful request.
 	Error string `json:"error,omitempty"`
+	// @brief Nearest future pickup and every waste fraction scheduled for that same date.
+	NextPickup *WasteCalendarPickup `json:"nextPickup,omitempty"`
+}
+
+// @brief Describes the next scheduled waste pickup for the selected Jachenhausen location.
+// @details Date is a local calendar date in YYYY-MM-DD format; fractions contains normalized names suitable for stable frontend icon mapping.
+type WasteCalendarPickup struct {
+	// @brief Local date on which the next one or more waste fractions are collected.
+	Date string `json:"date"`
+	// @brief Normalized waste fractions collected on Date, including simultaneous collections.
+	Fractions []string `json:"fractions"`
 }
 
 // @brief Holds the durable subset of waste-calendar service state.
 // @details Process identity and reload version are intentionally ephemeral; they identify lifecycle events to connected browsers.
 type wasteCalendarPersistedState struct {
-	RefreshIntervalWeeks int    `json:"refreshIntervalWeeks"`
-	LastAttemptAt        string `json:"lastAttemptAt,omitempty"`
-	LastSuccessAt        string `json:"lastSuccessAt,omitempty"`
+	RefreshIntervalWeeks int                  `json:"refreshIntervalWeeks"`
+	LastAttemptAt        string               `json:"lastAttemptAt,omitempty"`
+	LastSuccessAt        string               `json:"lastSuccessAt,omitempty"`
+	NextPickup           *WasteCalendarPickup `json:"nextPickup,omitempty"`
 }
 
 // @brief Owns the cached refresh schedule and upstream health check for the Awido calendar.
@@ -75,6 +92,7 @@ type WasteCalendarService struct {
 	lastAttemptAt time.Time
 	lastSuccessAt time.Time
 	lastError     string
+	nextPickup    *WasteCalendarPickup
 	instanceID    string
 	reloadVersion uint64
 	refreshing    bool
@@ -147,6 +165,11 @@ func (s *WasteCalendarService) load() error {
 		if state.LastSuccessAt != "" {
 			s.lastSuccessAt, _ = time.Parse(time.RFC3339Nano, state.LastSuccessAt)
 		}
+		if state.NextPickup != nil {
+			pickup := *state.NextPickup
+			pickup.Fractions = append([]string(nil), state.NextPickup.Fractions...)
+			s.nextPickup = &pickup
+		}
 		return nil
 	})
 }
@@ -160,6 +183,11 @@ func (s *WasteCalendarService) persist() error {
 		RefreshIntervalWeeks: s.settings.RefreshIntervalWeeks,
 		LastAttemptAt:        formatWasteCalendarTime(s.lastAttemptAt),
 		LastSuccessAt:        formatWasteCalendarTime(s.lastSuccessAt),
+	}
+	if s.nextPickup != nil {
+		pickup := *s.nextPickup
+		pickup.Fractions = append([]string(nil), s.nextPickup.Fractions...)
+		state.NextPickup = &pickup
 	}
 	s.mu.RUnlock()
 
@@ -261,6 +289,10 @@ func (s *WasteCalendarService) refresh(ctx context.Context) {
 			_ = response.Body.Close()
 		}
 	}
+	var nextPickup *WasteCalendarPickup
+	if err == nil {
+		nextPickup, err = s.fetchNextPickup(ctx, attemptAt)
+	}
 
 	s.mu.Lock()
 	s.refreshing = false
@@ -269,6 +301,7 @@ func (s *WasteCalendarService) refresh(ctx context.Context) {
 		s.lastError = err.Error()
 	} else {
 		s.lastSuccessAt = time.Now().UTC()
+		s.nextPickup = nextPickup
 	}
 	s.mu.Unlock()
 	if persistErr := s.persist(); persistErr != nil {
@@ -294,6 +327,11 @@ func (s *WasteCalendarService) Status() WasteCalendarStatus {
 		RefreshIntervalWeeks: s.settings.RefreshIntervalWeeks,
 		Refreshing:           s.refreshing,
 		Error:                s.lastError,
+	}
+	if s.nextPickup != nil {
+		pickup := *s.nextPickup
+		pickup.Fractions = append([]string(nil), s.nextPickup.Fractions...)
+		status.NextPickup = &pickup
 	}
 	status.LastAttemptAt = formatWasteCalendarTime(s.lastAttemptAt)
 	status.LastSuccessAt = formatWasteCalendarTime(s.lastSuccessAt)
@@ -386,4 +424,170 @@ func formatWasteCalendarTime(value time.Time) string {
 func drainWasteCalendarBody(body io.Reader) error {
 	_, err := io.Copy(io.Discard, io.LimitReader(body, 4<<20))
 	return err
+}
+
+// @brief Fetches the nearest upcoming pickup from Awido's official iCalendar export.
+// @details The current year is checked first and the following year is requested only when the current calendar has no future event. This supports year-end dates while keeping normal refreshes to one export request.
+// @param[in] ctx Request context cancelled when the service shuts down.
+// @param[in] now Reference timestamp used to select the local current date and calendar year.
+// @return Earliest pickup with all same-day fractions, or an error when Awido cannot provide a usable calendar.
+func (s *WasteCalendarService) fetchNextPickup(ctx context.Context, now time.Time) (*WasteCalendarPickup, error) {
+	for year := now.In(time.Local).Year(); year <= now.In(time.Local).Year()+1; year++ {
+		calendarURL, err := buildWasteCalendarICSURL(s.calendarURL, year)
+		if err != nil {
+			return nil, err
+		}
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, calendarURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("create Awido iCalendar request: %w", err)
+		}
+		request.Header.Set("User-Agent", "ETA-WebGUI-Abfallkalender/1.0")
+		response, err := s.client.Do(request)
+		if err != nil {
+			return nil, fmt.Errorf("request Awido iCalendar export: %w", err)
+		}
+		if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+			_ = response.Body.Close()
+			return nil, fmt.Errorf("Awido iCalendar export antwortet mit HTTP %d", response.StatusCode)
+		}
+		body, readErr := io.ReadAll(io.LimitReader(response.Body, 4<<20))
+		_ = response.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("read Awido iCalendar export: %w", readErr)
+		}
+		pickup, err := parseWasteCalendarICS(string(body), now)
+		if err != nil {
+			return nil, err
+		}
+		if pickup != nil {
+			return pickup, nil
+		}
+	}
+	return nil, fmt.Errorf("Awido iCalendar export enthält keinen anstehenden Abholtermin")
+}
+
+// @brief Builds the fixed-location Awido iCalendar export URL for one calendar year.
+// @details The page endpoint is replaced with Awido's documented KalenderICS.aspx export endpoint; only the configured calendar host and path are reused, while the location and fraction selection remain fixed to Jachenhausen.
+// @param[in] calendarURL Public calendar page URL configured for the service.
+// @param[in] year Calendar year requested from Awido.
+// @return Encoded iCalendar export URL or an error if the configured page URL is invalid.
+func buildWasteCalendarICSURL(calendarURL string, year int) (string, error) {
+	parsed, err := url.Parse(calendarURL)
+	if err != nil {
+		return "", fmt.Errorf("parse Awido calendar URL: %w", err)
+	}
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("parse Awido calendar URL: absolute URL required")
+	}
+	parsed.Path = path.Join(path.Dir(parsed.Path), "KalenderICS.aspx")
+	query := parsed.Query()
+	query.Set("oid", wasteCalendarLocationID)
+	query.Set("jahr", fmt.Sprintf("%d", year))
+	query.Set("fraktionen", wasteCalendarFractionIDs)
+	query.Set("reminder", "-1.08:00")
+	parsed.RawQuery = query.Encode()
+	return parsed.String(), nil
+}
+
+// @brief Parses an Awido iCalendar document and groups the nearest future events by local date.
+// @details RFC 5545 folded lines are unfolded before VEVENT processing. Only the four collection fractions used by the Landkreis calendar are normalized; all matching events on the earliest date are returned together.
+// @param[in] raw Complete iCalendar text returned by Awido.
+// @param[in] now Reference timestamp that determines today's local date.
+// @return Earliest pickup and its normalized fractions, nil when no future supported event exists, or an error for an invalid reference date.
+func parseWasteCalendarICS(raw string, now time.Time) (*WasteCalendarPickup, error) {
+	if !strings.Contains(raw, "BEGIN:VCALENDAR") || !strings.Contains(raw, "END:VCALENDAR") {
+		return nil, fmt.Errorf("Awido iCalendar export ist ungültig")
+	}
+	localNow := now.In(time.Local)
+	today := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 0, 0, 0, 0, time.Local)
+	physicalLines := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
+	lines := make([]string, 0, len(physicalLines))
+	for _, line := range physicalLines {
+		if (strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t")) && len(lines) > 0 {
+			lines[len(lines)-1] += line[1:]
+			continue
+		}
+		lines = append(lines, line)
+	}
+
+	type calendarEvent struct {
+		date     time.Time
+		fraction string
+	}
+	events := make([]calendarEvent, 0)
+	insideEvent := false
+	var eventDate time.Time
+	var eventFraction string
+	for _, line := range lines {
+		if line == "BEGIN:VEVENT" {
+			insideEvent = true
+			eventDate = time.Time{}
+			eventFraction = ""
+			continue
+		}
+		if line == "END:VEVENT" {
+			if insideEvent && !eventDate.IsZero() && eventFraction != "" && !eventDate.Before(today) {
+				events = append(events, calendarEvent{date: eventDate, fraction: eventFraction})
+			}
+			insideEvent = false
+			continue
+		}
+		if !insideEvent {
+			continue
+		}
+		property, value, found := strings.Cut(line, ":")
+		if !found {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(strings.ToUpper(property), "DTSTART"):
+			if len(value) < len("20060102") {
+				continue
+			}
+			parsedDate, err := time.ParseInLocation("20060102", value[:8], time.Local)
+			if err == nil {
+				eventDate = parsedDate
+			}
+		case strings.EqualFold(property, "SUMMARY"):
+			eventFraction = normalizeWasteFraction(value)
+		}
+	}
+	if len(events) == 0 {
+		return nil, nil
+	}
+	sort.Slice(events, func(left, right int) bool { return events[left].date.Before(events[right].date) })
+	nearestDate := events[0].date
+	fractions := make(map[string]struct{})
+	for _, event := range events {
+		if !event.date.Equal(nearestDate) {
+			break
+		}
+		fractions[event.fraction] = struct{}{}
+	}
+	orderedFractions := make([]string, 0, len(fractions))
+	for fraction := range fractions {
+		orderedFractions = append(orderedFractions, fraction)
+	}
+	sort.Strings(orderedFractions)
+	return &WasteCalendarPickup{Date: nearestDate.Format("2006-01-02"), Fractions: orderedFractions}, nil
+}
+
+// @brief Maps an Awido event summary to a stable waste-fraction key.
+// @details The source may append a municipality name to each summary, so matching is case-insensitive and uses the known collection names rather than the full display string.
+// @param[in] summary Event summary supplied in the ICS VEVENT.
+// @return Stable frontend key or an empty string for unsupported event summaries.
+func normalizeWasteFraction(summary string) string {
+	lower := strings.ToLower(summary)
+	switch {
+	case strings.Contains(lower, "biotonne"):
+		return "bio"
+	case strings.Contains(lower, "papierabfuhr"):
+		return "paper"
+	case strings.Contains(lower, "restmüll"), strings.Contains(lower, "restmuell"):
+		return "residual"
+	case strings.Contains(lower, "gelber sack"), strings.Contains(lower, "gelbe tonne"):
+		return "yellow"
+	default:
+		return ""
+	}
 }

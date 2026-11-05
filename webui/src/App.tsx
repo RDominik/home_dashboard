@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
+import GlobalStatusBar from './components/GlobalStatusBar'
 import './App.css'
 
 export default function App() {
@@ -38,9 +39,12 @@ export default function App() {
           <div>v0.1 (Preview)</div>
         </div>
       </aside>
-      <main style={{ flex: 1, minWidth: 0, minHeight: 0, padding: 20, overflowY: 'auto', overflowX: 'hidden', overflowAnchor: 'none' }}>
-        <Outlet />
-      </main>
+      <div className="app-content">
+        <main className="app-main">
+          <Outlet />
+        </main>
+        <GlobalStatusBar />
+      </div>
     </div>
   )
 }

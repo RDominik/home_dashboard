@@ -13,7 +13,7 @@ Ziel: Einfache Weboberfläche mit Seitenleiste, um verschiedene Dashboards anzuz
 - `src/App.tsx`
 	- Globales Layout (Sidebar + Content-Bereich).
 	- Definiert Navigation und `Outlet`-Container.
-	- Enthält das Scroll-Layout (nur Content-Bereich scrollt).
+	- Enthält das Scroll-Layout (nur Content-Bereich scrollt) und die auf allen Seiten sichtbare Live-Statusleiste am unteren Rand.
 
 ### Seiten (`src/pages`)
 
@@ -59,6 +59,10 @@ Ziel: Einfache Weboberfläche mit Seitenleiste, um verschiedene Dashboards anzuz
 	- Weitere Seitenkomponenten fur Inverter-/Wallbox-Funktionen (je nach aktueller Router-Konfiguration eingebunden oder vorbereitet).
 
 ### Gemeinsame Komponenten
+
+- `src/components/GlobalStatusBar.tsx`
+	- Zeigt Wetterstation, aktuelle PV-Leistung, Hausverbrauch und den nächsten Abholtermin global an.
+	- Aktualisiert die bestehenden Wetter-, Inverter- und Abfallkalender-Endpunkte alle 30 Sekunden; mehrere Abfallfraktionen am selben Tag erscheinen als einzelne Symbole.
 
 - `src/components/Charts.tsx`
 	- Wiederverwendbare Chart-Darstellung fur Dashboard-Seiten.
