@@ -28,6 +28,14 @@ Language and communication:
 - Default response language is German.
 - Keep answers concise and implementation-focused.
 
+Automatic application versioning:
+- Treat `webui/package.json` as the canonical application version and keep `webui/package-lock.json` synchronized through npm.
+- For each implementation task that changes runtime behavior or adds a user-visible capability, bump the application version exactly once before completion. Do not bump for documentation-only, comment-only, or formatting-only changes unless the user asks.
+- Use Semantic Versioning: increment PATCH for bug fixes and small maintenance changes, MINOR for backward-compatible features or substantial improvements, and MAJOR for breaking changes or a user-requested major release.
+- Run the matching `npm run version:patch`, `npm run version:minor`, or `npm run version:major` command from `webui/`; do not hand-edit only one version file.
+- The UI must read its displayed version from `webui/package.json`; never hardcode a separate version string in a component.
+- If a task contains several code changes, apply one version bump for the combined task rather than incrementing once per edited file.
+
 Non-negotiable behavior rules:
 - Never break existing manual/schedule semantics.
 - Keep schedule activation explicit: activating schedule is only effective when intended by the current UI flow.

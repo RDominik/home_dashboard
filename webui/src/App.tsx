@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
+import packageJson from '../package.json'
 import GlobalStatusBar from './components/GlobalStatusBar'
 import './App.css'
 
@@ -36,7 +37,7 @@ export default function App() {
         <div className="app-sidebar-footer">
           <div style={{ fontWeight: 700, marginBottom: 4 }}>Uhrzeit</div>
           <div>{currentTime}</div>
-          <div>v0.1 (Preview)</div>
+          <div>v{packageJson.version} (Preview)</div>
         </div>
       </aside>
       <div className="app-content">
