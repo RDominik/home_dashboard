@@ -23,7 +23,7 @@ func TestWasteCalendarRefreshesOnStartup(t *testing.T) {
 		case "/Customer/kelheim/v3/Calendar2.aspx":
 			w.Header().Set("Content-Type", "text/html")
 			_, _ = io.WriteString(w, "<html>calendar</html>")
-		case "/Customer/kelheim/v3/KalenderICS.aspx":
+		case "/Customer/kelheim/KalenderICS.aspx":
 			w.Header().Set("Content-Type", "text/calendar")
 			_, _ = fmt.Fprintf(w, "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:Biotonne in Stadt Riedenburg\r\nDTSTART;VALUE=DATE:%s\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nSUMMARY:Papierabfuhr in Stadt Riedenburg\r\nDTSTART;VALUE=DATE:%s\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n", pickupDate, pickupDate)
 		default:

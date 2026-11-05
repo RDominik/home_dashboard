@@ -479,7 +479,11 @@ func buildWasteCalendarICSURL(calendarURL string, year int) (string, error) {
 	if parsed.Scheme == "" || parsed.Host == "" {
 		return "", fmt.Errorf("parse Awido calendar URL: absolute URL required")
 	}
-	parsed.Path = path.Join(path.Dir(parsed.Path), "KalenderICS.aspx")
+	calendarPath := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(calendarPath) < 3 || calendarPath[0] != "Customer" || calendarPath[len(calendarPath)-1] != "Calendar2.aspx" {
+		return "", fmt.Errorf("parse Awido calendar URL: expected /Customer/{customer}/.../Calendar2.aspx path")
+	}
+	parsed.Path = path.Join("/Customer", calendarPath[1], "KalenderICS.aspx")
 	query := parsed.Query()
 	query.Set("oid", wasteCalendarLocationID)
 	query.Set("jahr", fmt.Sprintf("%d", year))
