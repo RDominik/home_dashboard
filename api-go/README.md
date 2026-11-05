@@ -34,7 +34,7 @@ Backend components (folder map)
 	- Shared REST helper code and JSON POST utilities.
 	- Used by internal packages and CLI helpers.
 	- The Awido waste-calendar service checks the Riedenburg-Jachenhausen calendar at backend startup and on its persisted, configurable 1–52 week interval; refresh and settings handlers live in `api_handlers.go`.
-	- Its status response includes the next pickup date and every same-day fraction, obtained from Awido's ICS export and cached in bbolt across backend restarts.
+	- Its status response includes the next pickup date and every same-day fraction except Biotonne, obtained from Awido's ICS export and cached in bbolt across backend restarts.
 
 - `cmd/wallbox-set/`
 	- Standalone CLI for `PUT /api/wallbox/set`.

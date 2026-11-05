@@ -577,14 +577,14 @@ func parseWasteCalendarICS(raw string, now time.Time) (*WasteCalendarPickup, err
 }
 
 // @brief Maps an Awido event summary to a stable waste-fraction key.
-// @details The source may append a municipality name to each summary, so matching is case-insensitive and uses the known collection names rather than the full display string.
+// @details The source may append a municipality name to each summary, so matching is case-insensitive and uses the known collection names rather than the full display string. Biotonne events are deliberately excluded from the status-bar pickup calculation.
 // @param[in] summary Event summary supplied in the ICS VEVENT.
 // @return Stable frontend key or an empty string for unsupported event summaries.
 func normalizeWasteFraction(summary string) string {
 	lower := strings.ToLower(summary)
 	switch {
 	case strings.Contains(lower, "biotonne"):
-		return "bio"
+		return ""
 	case strings.Contains(lower, "papierabfuhr"):
 		return "paper"
 	case strings.Contains(lower, "restmüll"), strings.Contains(lower, "restmuell"):

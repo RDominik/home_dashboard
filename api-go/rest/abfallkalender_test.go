@@ -16,6 +16,7 @@ import (
 // @param[in] t Go test context used for temporary storage and lifecycle assertions.
 func TestWasteCalendarRefreshesOnStartup(t *testing.T) {
 	var requests atomic.Int32
+	bioOnlyDate := time.Now().In(time.Local).AddDate(0, 0, 1).Format("20060102")
 	pickupDate := time.Now().In(time.Local).AddDate(0, 0, 2).Format("20060102")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
@@ -25,7 +26,7 @@ func TestWasteCalendarRefreshesOnStartup(t *testing.T) {
 			_, _ = io.WriteString(w, "<html>calendar</html>")
 		case "/Customer/kelheim/KalenderICS.aspx":
 			w.Header().Set("Content-Type", "text/calendar")
-			_, _ = fmt.Fprintf(w, "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:Biotonne in Stadt Riedenburg\r\nDTSTART;VALUE=DATE:%s\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nSUMMARY:Papierabfuhr in Stadt Riedenburg\r\nDTSTART;VALUE=DATE:%s\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n", pickupDate, pickupDate)
+			_, _ = fmt.Fprintf(w, "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:Biotonne in Stadt Riedenburg\r\nDTSTART;VALUE=DATE:%s\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nSUMMARY:Biotonne in Stadt Riedenburg\r\nDTSTART;VALUE=DATE:%s\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nSUMMARY:Papierabfuhr in Stadt Riedenburg\r\nDTSTART;VALUE=DATE:%s\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nSUMMARY:Restmüll in Stadt Riedenburg\r\nDTSTART;VALUE=DATE:%s\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n", bioOnlyDate, pickupDate, pickupDate, pickupDate)
 		default:
 			http.NotFound(w, r)
 		}
@@ -55,8 +56,8 @@ func TestWasteCalendarRefreshesOnStartup(t *testing.T) {
 	if status.InstanceID == "" || status.LastSuccessAt == "" || status.Error != "" {
 		t.Fatalf("startup status = %#v; want instance identity and successful refresh", status)
 	}
-	if status.NextPickup == nil || status.NextPickup.Date != time.Now().In(time.Local).AddDate(0, 0, 2).Format("2006-01-02") || len(status.NextPickup.Fractions) != 2 {
-		t.Fatalf("startup next pickup = %#v; want two fractions grouped on the nearest date", status.NextPickup)
+	if status.NextPickup == nil || status.NextPickup.Date != time.Now().In(time.Local).AddDate(0, 0, 2).Format("2006-01-02") || len(status.NextPickup.Fractions) != 2 || status.NextPickup.Fractions[0] != "paper" || status.NextPickup.Fractions[1] != "residual" {
+		t.Fatalf("startup next pickup = %#v; want the first non-bio date with paper and residual fractions", status.NextPickup)
 	}
 	service.Stop()
 
@@ -80,8 +81,8 @@ func TestWasteCalendarRefreshesOnStartup(t *testing.T) {
 	if restartedStatus.InstanceID == status.InstanceID || restartedStatus.LastSuccessAt == "" {
 		t.Fatalf("restart status = %#v; want new instance identity and successful refresh", restartedStatus)
 	}
-	if restartedStatus.NextPickup == nil || len(restartedStatus.NextPickup.Fractions) != 2 {
-		t.Fatalf("restart next pickup = %#v; want persisted same-day fractions", restartedStatus.NextPickup)
+	if restartedStatus.NextPickup == nil || len(restartedStatus.NextPickup.Fractions) != 2 || restartedStatus.NextPickup.Fractions[0] != "paper" || restartedStatus.NextPickup.Fractions[1] != "residual" {
+		t.Fatalf("restart next pickup = %#v; want persisted non-bio fractions", restartedStatus.NextPickup)
 	}
 }
 
